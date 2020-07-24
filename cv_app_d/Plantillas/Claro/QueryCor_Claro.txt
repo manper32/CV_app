@@ -1,0 +1,21 @@
+--correo
+select distinct
+	trim(t.deudor_id) deudor_id
+	--trim(upper(t.correo)) correo
+	,split_part(trim(upper(t.correo)),' ',1) sp
+	,split_part(trim(upper(t.correo)),' ',2) sp1
+from
+	cbpo_claro.obligaciones_asignacion as oa
+inner join cbpo_claro.obligaciones as o on
+	o.obligacion_id = oa.obligacion_id
+inner join cbpo_claro.correos as t on
+	t.deudor_id = o.deudor_id 
+where
+	oa.asignacion_id = (
+	select
+		asignacion_id
+	from
+		cbpo_claro.asignaciones as a
+	where
+		estado is true)
+order by trim(t.deudor_id);
