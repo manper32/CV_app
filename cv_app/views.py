@@ -198,7 +198,7 @@ def excel_CV_COL(request):
     fn = pd.merge(fn,infD,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
 
-    return excel(fn,tablename)
+    return excel(inf,tablename)
 
 
 def csv_CV_Claro(request):
