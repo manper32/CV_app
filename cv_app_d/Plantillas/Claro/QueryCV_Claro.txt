@@ -75,7 +75,7 @@
 					WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
 					WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
 					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = cp.fecha_pago THEN 'Faltan 2 dias'
-					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = cp.fecha_pago THEN 'Faltan 1 dia'
+					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = cp.fecha_pago THEN 'Falta 1 dia'
 					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date = cp.fecha_pago THEN 'Debe pagar hoy'
 					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= cp.fecha_pago THEN 'Vigente'
 					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN cp.fecha_pago + 1 AND cp.fecha_pago + 2  THEN 'Pendiente'

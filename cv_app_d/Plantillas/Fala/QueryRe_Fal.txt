@@ -3,7 +3,7 @@ select distinct trim(deudor_id)
 	 			OVER (PARTITION  BY	trim(deudor_id)
 				ORDER BY	trim(deudor_id) desc,
 							telefono desc) AS ROWNUMBER
-				,concat(cast(indicativo as varchar),cast(telefono as varchar)) 
+				,trim(referencia)||'-'||nombre_ref
 from cbpo_falabella.telefonos
 where telefono_estado is true
 order by trim(deudor_id)desc,row_number ()

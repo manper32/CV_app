@@ -1,0 +1,191 @@
+WITH base AS (SELECT DISTINCT o.deudor_id 
+			  FROM cbpo_propia.obligaciones_asignacion AS oa 
+			  INNER JOIN cbpo_propia.obligaciones AS o 
+			  ON o.obligacion_id = oa.obligacion_id
+			  WHERE oa.asignacion_id = (SELECT a.asignacion_id 
+			  						    FROM cbpo_propia.asignaciones AS a 
+			  						    WHERE a.estado IS TRUE)),
+sumasaldo AS (SELECT c.deudor_id,SUM(regexp_replace(c.saldo_k_pareto_mes_vigente, '[^0-9]', '','g')::NUMERIC) AS saldo_k_pareto 
+			  FROM cbpo_propia.cons_asignacion AS c
+			  INNER JOIN base AS b ON b.deudor_id = c.deudor_id 
+			  WHERE c.asignacion_id = (SELECT asignacion_id FROM cbpo_propia.asignaciones WHERE estado = TRUE )
+			  GROUP BY c.deudor_id),
+sumainteres AS (SELECT c.deudor_id,SUM(regexp_replace(c.intereses , '[^0-9]', '','g')::NUMERIC) AS intereses_pareto 
+				FROM cbpo_propia.cons_asignacion AS c
+			    INNER JOIN base AS b ON b.deudor_id = c.deudor_id
+			    WHERE c.asignacion_id = (SELECT asignacion_id FROM cbpo_propia.asignaciones WHERE estado = TRUE )
+				AND regexp_replace(c.intereses , '[^0-9]', '','g') != '' GROUP BY c.deudor_id),
+sumahono AS (SELECT c.deudor_id,SUM(regexp_replace(c.honorarios_20 , '[^0-9]', '','g')::NUMERIC) AS honorarios_pareto 
+			 FROM cbpo_propia.cons_asignacion AS c
+			  INNER JOIN base AS b ON b.deudor_id = c.deudor_id
+			  WHERE c.asignacion_id = (SELECT asignacion_id FROM cbpo_propia.asignaciones WHERE estado = TRUE )
+			 AND regexp_replace(c.honorarios_20 , '[^0-9]', '','g') != '' GROUP BY c.deudor_id),
+consa AS (SELECT m.* 
+		  FROM cbpo_propia.mejor_gestion AS m 
+		  LEFT JOIN base AS b 
+		  ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date )),
+consb AS (SELECT m.deudor_id,indicador 
+	      FROM cbpo_propia.mejor_gestion AS m 
+	      LEFT JOIN base AS b 
+	      ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
+consc AS (SELECT m.deudor_id,indicador 
+          FROM cbpo_propia.mejor_gestion AS m 
+          LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+          WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
+consd AS (SELECT m.deudor_id,indicador 
+		  FROM cbpo_propia.mejor_gestion AS m 
+		  LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
+conse AS (SELECT m.deudor_id,indicador 
+	      FROM cbpo_propia.mejor_gestion AS m 
+	      LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
+basemejorgestion AS (SELECT DISTINCT bs.deudor_id,
+							a.mes, 
+							a.anio, 
+							a.indicador, 
+							CASE WHEN a.repeticion IS NULL THEN 0 ELSE a.repeticion END AS repeticion, 
+							CASE WHEN a.llamadas IS NULL THEN 0 ELSE a.llamadas END AS llamadas, 
+							CASE WHEN a.sms IS NULL THEN 0 ELSE a.sms END AS sms, 
+							CASE WHEN a.correos IS NULL THEN 0 ELSE a.correos END AS correos, 
+							CASE WHEN a.gescall IS NULL THEN 0 ELSE a.gescall END AS gescall, 
+					  		CASE WHEN a.whatsapp IS NULL THEN 0 ELSE a.whatsapp END  AS whatsapp,
+					  		CASE WHEN a.no_contacto IS NULL THEN 0 ELSE a.no_contacto END AS no_contacto,
+					  		CASE WHEN a.llamadas IS NULL THEN 0 ELSE a.llamadas END +
+					  		CASE WHEN a.sms IS NULL THEN 0 ELSE a.sms END +
+					  		CASE WHEN a.correos IS NULL THEN 0 ELSE a.correos END +
+					  		CASE WHEN a.gescall IS NULL THEN  0 ELSE a.gescall END +
+					  		CASE WHEN a.whatsapp IS NULL THEN 0 ELSE a.whatsapp END +
+					  		CASE WHEN a.no_contacto IS NULL THEN  0 ELSE a.no_contacto END AS total_gestiones, 
+					  		a.fecha_gestion, CASE WHEN a.visitas IS NULL THEN 0 ELSE a.visitas END AS visitas , a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, 
+					  a.ultimo_alo,b.indicador AS ind_m1,c.indicador AS ind_m2,d.indicador AS ind_m3,e.indicador AS ind_m4,i.contactability 
+					  FROM base AS bs
+					  LEFT JOIN consa	AS a ON a.deudor_id = bs.deudor_id					
+					  LEFT JOIN consb AS b ON b.deudor_id = bs.deudor_id
+					  LEFT JOIN consc AS c ON c.deudor_id = bs.deudor_id
+					  LEFT JOIN consd AS d ON d.deudor_id = bs.deudor_id
+					  LEFT JOIN conse AS e ON e.deudor_id = bs.deudor_id
+					  LEFT JOIN bi_snap.management_indicators AS i ON i.indicator_desc = trim(a.indicador)
+					  GROUP BY bs.deudor_id,a.mes,a.anio,a.indicador,a.repeticion, 
+							a.llamadas,a.sms,a.correos,a.gescall,a.whatsapp,a.no_contacto,a.fecha_gestion,
+							a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, 
+					  		a.ultimo_alo,b.indicador,c.indicador,d.indicador,e.indicador,i.contactability),
+basepagos AS (SELECT p.deudor_id,u.obligacion_id,sum(p.pago_valor) AS valortotal,max(p.pago_fecha) AS ultima_fecha FROM cbpo_propia.pagos AS p 
+			  INNER JOIN cbpo_propia.unicos AS u ON u.deudor_id = p.deudor_id
+			  WHERE u.unico = 1 
+			  AND p.pago_fecha >= (SELECT fecha_apertura FROM cbpo_propia.asignaciones WHERE estado = TRUE )
+			  GROUP BY p.deudor_id,u.obligacion_id
+			  ),
+basetelpos AS (SELECT ROW_NUMBER () OVER (PARTITION BY tpf.deudor_id 
+										  ORDER BY tpf.fec_ultima_marcacion DESC , tpf.marcaciones DESC ,tpf.deudor_id DESC ,tpf.telefono DESC) AS contador,
+			   tpf.deudor_id,tpf.fec_ultima_marcacion,tpf.telefono,tpf.marcaciones 
+			   FROM cbpo_propia.telefonos_positivos AS tpf 
+			   WHERE deudor_id != '' 
+			   ORDER BY tpf.deudor_id,contador),			  
+telefonospositivos AS (SELECT deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),
+basecompromisos AS (SELECT DISTINCT ROW_NUMBER () OVER (PARTITION BY c.deudor_id 
+											   ORDER BY c.fecha_compromiso DESC ) AS contador,
+					c.deudor_id,c.valor AS valor_compromiso,c.fecha_compromiso,c.fecha_pago AS fecha_pactada_compromiso,c.asesor 
+					FROM cbpo_propia.compromisos AS c
+					WHERE c.fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_propia.asignaciones WHERE estado = TRUE )
+					ORDER BY c.deudor_id),
+compromisos AS (SELECT b.*,u.obligacion_id 
+				FROM basecompromisos AS b INNER JOIN cbpo_propia.unicos AS u ON u.deudor_id = b.deudor_id
+				WHERE b.contador = 1
+				AND u.unico = 1)			  
+SELECT 
+	ca.deudor_id,
+	u.unico::TEXT,
+	ca.nombre,
+	ca.obligacion, 
+	ca.obligacion_id AS obligacion_17,
+	t.tipo_cliente,
+	ca.sucursal_final,
+	ca.zona,
+	ca.ano_castigo,
+	ca.saldo_k_pareto_mes_vigente,
+	ca.intereses,
+	ca.honorarios_20,
+	ca.saldo_total_mes_vigente,
+	ca.saldo_total_pareto_mes_vigente_,
+	'$ '||ss.saldo_k_pareto AS saldokpareto,
+	CASE WHEN ss.saldo_k_pareto >= 100000000 THEN '1.MAYOR A 100MM'
+		 WHEN ss.saldo_k_pareto >=  70000000 AND ss.saldo_k_pareto < 100000000 THEN '2.ENTRE 70MM Y 100MM'
+		 WHEN ss.saldo_k_pareto >=  40000000 AND ss.saldo_k_pareto < 70000000 THEN '3.ENTRE 40MM Y 70MM'
+		 WHEN ss.saldo_k_pareto >=  20000000 AND ss.saldo_k_pareto < 400000000 THEN '4.ENTRE 20MM Y 40MM'
+		 WHEN ss.saldo_k_pareto >=  10000000 AND ss.saldo_k_pareto < 200000000 THEN '5.ENTRE 10MM Y 20MM'
+		 WHEN ss.saldo_k_pareto >=   5000000 AND ss.saldo_k_pareto < 100000000 THEN '6.ENTRE 5MM Y 10MM'
+		 WHEN ss.saldo_k_pareto < 5000000 THEN '5.MENOR A 5MM'
+	END AS rango_k_pareto,
+	'$ '||si.intereses_pareto AS interesespareto,
+	'$ '||sh.honorarios_pareto AS honorariospareto,
+	ROUND(ROUND(ss.saldo_k_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) ||' %' AS porcentaje_k_del_total,
+	ROUND(ROUND(si.intereses_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) ||' %' AS porcentaje_intereses_del_total,
+	ROUND(ROUND(sh.honorarios_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) ||' %' AS porcentaje_honorarios_del_total,
+	CASE WHEN ROUND(ROUND(ss.saldo_k_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) >= 70 THEN '1. MAYOR AL 70%'
+		 WHEN ROUND(ROUND(ss.saldo_k_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) >= 50 AND ROUND(ROUND(ss.saldo_k_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) < 70 THEN '2. ENTRE 50% Y 70%'
+		 WHEN ROUND(ROUND(ss.saldo_k_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) >= 30 AND ROUND(ROUND(ss.saldo_k_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) < 50 THEN '3. ENTRE 30% Y 50%'
+		 WHEN ROUND(ROUND(ss.saldo_k_pareto / regexp_replace(ca.saldo_total_pareto_mes_vigente_ , '[^0-9]', '','g')::NUMERIC,2) * 100) < 30  THEN '4. MENOR AL 30%'
+	END AS rango_k_porcentaje,
+	'$ '||ROUND((ss.saldo_k_pareto * 20) / 100) AS capital_20_porciento,
+	ca.dias_mora_acumulado,
+	ca.marca_juridica_cliente,
+	ca.investigacion_de_bienes,
+	'$ '||bp.valortotal AS valor_pago,
+	bp.ultima_fecha,
+	'$ '||cp.valor_compromiso AS valor_compromiso,
+	cp.fecha_compromiso,
+	cp.fecha_pactada_compromiso,
+	cp.asesor,
+	CASE 
+		WHEN cp.fecha_pactada_compromiso IS NULL AND bp.valortotal IS NULL THEN 'Sin acuerdo'
+		WHEN cp.fecha_pactada_compromiso IS NULL AND bp.valortotal IS NOT NULL AND bp.valortotal > 0 THEN 'Pago sin compromiso' 
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.ultima_fecha IS NULL AND current_date + 2 = cp.fecha_pactada_compromiso THEN 'Falta 2 dias'
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.ultima_fecha IS NULL AND current_date + 1 = cp.fecha_pactada_compromiso THEN 'Falta 1 dia'
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.ultima_fecha IS NULL AND current_date = cp.fecha_pactada_compromiso THEN 'Debe pagar hoy'
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.ultima_fecha IS NULL AND current_date <= cp.fecha_pactada_compromiso THEN 'Vigente'
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.ultima_fecha IS NULL AND current_date BETWEEN cp.fecha_pactada_compromiso + 1 AND cp.fecha_pactada_compromiso + 2  THEN 'Pendiente'
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal >= regexp_replace(ca.saldo_total_mes_vigente , '[^0-9]', '','g')::NUMERIC THEN 'Cumplido'
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal < regexp_replace(ca.saldo_total_mes_vigente , '[^0-9]', '','g')::NUMERIC THEN 'Pago parcial'
+		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal IS NULL THEN 'Incumplido' 
+	END AS estado_acuerdo,
+	mg.ind_m4,
+	mg.ind_m3,
+	mg.ind_m2,
+	mg.ind_m1,
+	mg.fecha_primer_gestion,
+	mg.fecha_ultima_gestion,
+	CASE WHEN mg.indicador IS NULL THEN 'SIN GESTION' ELSE mg.indicador END AS indicador,
+	mg.phone::TEXT AS telefono_mejor_gestion,
+	mg.asesor,
+	mg.fecha_gestion,
+	CASE WHEN mg.contactability IS NULL OR mg.contactability = 0 THEN 'No contacto' 
+		WHEN mg.contactability = 1 THEN 'Contacto'
+	END AS contactabilidad, 
+	CASE WHEN md.indicador IS NULL THEN 'SIN GESTION' ELSE md.indicador END AS indicador_hoy, 
+	mg.repeticion::TEXT ,
+	mg.llamadas::TEXT ,
+	mg.sms::TEXT ,
+	mg.correos::TEXT ,
+	mg.gescall::TEXT ,
+	mg.whatsapp::TEXT ,
+	mg.visitas::TEXT ,
+	mg.no_contacto::TEXT ,
+	mg.total_gestiones::TEXT ,
+	tp.telefono::TEXT AS telefono_positivo,
+	tp.fec_ultima_marcacion
+FROM cbpo_propia.cons_asignacion AS ca
+LEFT  JOIN cbpo_propia.unicos AS u ON u.obligacion_id = ca.obligacion_id 
+LEFT JOIN cbpo_propia.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
+LEFT JOIN sumasaldo AS ss ON ss.deudor_id = ca.deudor_id
+LEFT JOIN sumainteres AS si ON si.deudor_id = ca.deudor_id
+LEFT JOIN sumahono AS sh ON sh.deudor_id = ca.deudor_id
+LEFT JOIN basepagos AS bp ON bp.obligacion_id = ca.obligacion_id
+LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
+LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id
+LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
+LEFT JOIN cbpo_propia.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
+WHERE ca.asignacion_id = (SELECT asignacion_id FROM cbpo_propia.asignaciones WHERE estado = TRUE )
+ORDER BY ca.deudor_id;

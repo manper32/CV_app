@@ -15,10 +15,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from cv_app.views import excel_CV_COL,csv_CV_Claro
+from cv_app.views import excel_CV_COL,csv_CV_Claro,csv_CV_CarP,csv_CV_Fala
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('excel_CV_Col/', excel_CV_COL),
     path('csv_CV_Claro/', csv_CV_Claro),
+    path('csv_CV_CarP/', csv_CV_CarP),
+    path('csv_CV_Fala/', csv_CV_Fala),
 ]

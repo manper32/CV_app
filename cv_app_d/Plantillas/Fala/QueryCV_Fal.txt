@@ -1,762 +1,507 @@
-WITH base AS (
-SELECT
-	DISTINCT oa.obligacion_id,
-	o.deudor_id,
-	ROW_NUMBER () OVER (
-ORDER BY
-	o.deudor_id) AS rownumber
-FROM
-	cbpo_colpatria.obligaciones_asignacion AS oa
-INNER JOIN cbpo_colpatria.obligaciones AS o ON
-	o.obligacion_id = oa.obligacion_id
-WHERE
-	asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)
-ORDER BY
-	o.deudor_id),
-minrow AS (
---- Registro de primera aparicion de la identificacion
-SELECT
-	deudor_id,
-	MIN(rownumber) AS minrownumber
-FROM
-	base
-GROUP BY
-	deudor_id),
-unicos AS (
---- Se marca con 1 la primer aparicion de la identificacion, las demas se marcan con el 0
-SELECT
-	b.obligacion_id,
-	b.deudor_id,
-	b.rownumber,
-	CASE WHEN u.minrownumber IS NULL THEN 0
-	ELSE 1 END AS unico
-FROM
-	base AS b
-LEFT JOIN minrow AS u ON
-	u.deudor_id = b.deudor_id
-	AND u.minrownumber = b.rownumber),
-tipocliente AS (
---- Se realiza conteo de productos por identificacion y se determian el tipo de cliente 'MONO/MULTI'
-SELECT
-	deudor_id,
-	CASE WHEN COUNT(deudor_id) = 1 THEN 'MONO'
-	ELSE 'MULTI' END AS tipo_cliente
-FROM
-	base
-GROUP BY
-	deudor_id),
-inimora AS (
---- Se calcula el dia de mora inicial por obligacion 
-SELECT
-	f.obligacion_id,
-	b.deudor_id,
-	MIN(f.fecha_registro) AS minfecha
-FROM
-	cbpo_colpatria.cons_asignacion AS f
-INNER JOIN base AS b ON
-	b.obligacion_id = f.obligacion_id
-WHERE
-	f.asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)
-GROUP BY
-	f.obligacion_id,
-	b.deudor_id),
-finmora AS (
---- Se calcula el dia de mora actual por obligacion
-SELECT
-	f.obligacion_id,
-	b.deudor_id,
-	MAX(f.fecha_registro) AS maxfecha
-FROM
-	cbpo_colpatria.cons_asignacion AS f
-INNER JOIN base AS b ON
-	b.obligacion_id = f.obligacion_id
-WHERE
-	f.asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)
-GROUP BY
-	f.obligacion_id,
-	b.deudor_id),
-rangomorainicial AS (
---- Se calcula el rango de mora inicial basado en los dias de mora inicial
-SELECT
-	df.obligacion_id,
-	df.campo8::INT8 AS dias_mora,
-	SUBSTRING(df.campo13, 1, STRPOS(df.campo13, '.')-1)::INT8 AS saldo_capital,
-	SUBSTRING(df.campo14, 1, STRPOS(df.campo14, '.')-1)::INT8 AS saldo_mora,
-	CASE WHEN campo8::INT8 = 0 THEN '0'
-	WHEN campo8::INT8 > 0
-	AND campo8::INT8 <= 30 THEN '30'
-	WHEN campo8::INT8 >= 31
-	AND campo8::INT8 <= 60 THEN '60'
-	WHEN campo8::INT8 >= 61
-	AND campo8::INT8 <= 90 THEN '90'
-	WHEN campo8::INT8 >= 91
-	AND campo8::INT8 <= 120 THEN '120'
-	WHEN campo8::INT8 >= 121
-	AND campo8::INT8 <= 150 THEN '150'
-	WHEN campo8::INT8 >= 151
-	AND campo8::INT8 <= 180 THEN '180'
-	WHEN campo8::INT8 >= 181
-	AND campo8::INT8 <= 210 THEN '210'
-	WHEN campo8::INT8 >= 211 THEN '> 210' END AS rango_mora_inicial
-FROM
-	cbpo_colpatria.cons_asignacion AS df
-INNER JOIN inimora AS i ON
-	i.obligacion_id = df.obligacion_id
-	AND i.minfecha = df.fecha_registro
-WHERE
-	df.asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE) ),
-rangomorafinal AS (
---- Se calcula el rango de mora actual basado en los dias de mora actual
-SELECT
-	df.obligacion_id,
-	df.campo8::INT8 AS dias_mora,
-	SUBSTRING(df.campo13, 1, STRPOS(df.campo13, '.')-1)::INT8 AS saldo_capital,
-	SUBSTRING(df.campo14, 1, STRPOS(df.campo14, '.')-1)::INT8 AS saldo_mora,
-	CASE WHEN campo8::INT8 = 0 THEN '0'
-	WHEN campo8::INT8 > 0
-	AND campo8::INT8 <= 30 THEN '30'
-	WHEN campo8::INT8 >= 31
-	AND campo8::INT8 <= 60 THEN '60'
-	WHEN campo8::INT8 >= 61
-	AND campo8::INT8 <= 90 THEN '90'
-	WHEN campo8::INT8 >= 91
-	AND campo8::INT8 <= 120 THEN '120'
-	WHEN campo8::INT8 >= 121
-	AND campo8::INT8 <= 150 THEN '150'
-	WHEN campo8::INT8 >= 151
-	AND campo8::INT8 <= 180 THEN '180'
-	WHEN campo8::INT8 >= 181
-	AND campo8::INT8 <= 210 THEN '210'
-	WHEN campo8::INT8 >= 211 THEN '> 210' END AS rango_mora_final
-FROM
-	cbpo_colpatria.cons_asignacion AS df
-INNER JOIN finmora AS f ON
-	f.obligacion_id = df.obligacion_id
-	AND f.maxfecha = df.fecha_registro
-WHERE
-	df.asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)),
-rangocliente AS (
---- Se genera el rango del cliente basado el los datos del calculo de rango inicial y rango actual
-SELECT
-	ri.dias_mora AS dias_mora_inicial,
-	rf.dias_mora AS dias_mora_actual,
-	ri.obligacion_id,
-	ri.rango_mora_inicial,
-	rf.rango_mora_final,
-	ri.rango_mora_inicial || ' - ' || rf.rango_mora_final AS rango
-FROM
-	rangomorainicial AS ri
-INNER JOIN rangomorafinal AS rf ON
-	rf.obligacion_id = ri.obligacion_id),
-saldovencinicial AS (
---- Se obtiene el saldo vencido inicial
-SELECT
-	f.obligacion_id,
-	SUBSTRING(f.campo14, 1, STRPOS(f.campo14, '.')-1)::INT8 AS saldo_venc_inicial,
-	SUBSTRING(f.campo12, 1, STRPOS(f.campo12, '.')-1)::INT8 AS saldo_deuda,
-	SUBSTRING(f.campo13, 1, STRPOS(f.campo13, '.')-1)::INT8 AS saldo_capital
-FROM
-	cbpo_colpatria.cons_asignacion AS f
-INNER JOIN inimora AS i ON
-	i.obligacion_id = f.obligacion_id
-	AND i.minfecha = f.fecha_registro
-WHERE
-	f.asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)),
-saldovencactual AS (
---- Se obtiene el saldo vencido actual
-SELECT
-	f.obligacion_id,
-	SUBSTRING(f.campo14, 1, STRPOS(f.campo14, '.')-1)::INT8 AS saldo_venc_actual,
-	SUBSTRING(f.campo12, 1, STRPOS(f.campo12, '.')-1)::INT8 AS saldo_deuda,
-	SUBSTRING(f.campo13, 1, STRPOS(f.campo13, '.')-1)::INT8 AS saldo_capital
-FROM
-	cbpo_colpatria.cons_asignacion AS f
-INNER JOIN finmora AS i ON
-	i.obligacion_id = f.obligacion_id
-	AND i.maxfecha = f.fecha_registro
-WHERE
-	f.asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)),
-sumapareto AS (
-SELECT
-	i.deudor_id,
-	SUM(SUBSTRING(f.campo13, 1, STRPOS(f.campo13, '.')-1)::INT8) AS sumpareto
-FROM
-	cbpo_colpatria.cons_asignacion AS f
-INNER JOIN inimora AS i ON
-	i.obligacion_id = f.obligacion_id
-	AND i.minfecha = f.fecha_registro
-WHERE
-	f.asignacion_id = (
-	SELECT
-		asignacion_id
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)
-GROUP BY
-	i.deudor_id),
-totalpagos AS (
---- Se realiza sumatoria de pagos >= a la fecha inicio de la asignacion
-SELECT
-	p.obligacion_id ,
-	SUM(p.pago_valor) AS total_pagos
-FROM
-	cbpo_colpatria.pagos AS p
-INNER JOIN base AS b ON
-	b.obligacion_id = p.obligacion_id
-WHERE
-	p.pago_fecha >= (
-	SELECT
-		a.fecha_apertura
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)
-GROUP BY
-	p.obligacion_id),
-ultimopagofec AS (
-SELECT
-	p.obligacion_id,
-	MAX(p.pago_fecha) AS maxpagofec
-FROM
-	cbpo_colpatria.pagos AS p
-INNER JOIN base AS b ON
-	b.obligacion_id = p.obligacion_id
-WHERE
-	p.pago_fecha >= (
-	SELECT
-		a.fecha_apertura
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)
-GROUP BY
-	p.obligacion_id ),
-maxconsasg AS (
-SELECT
-	obligacion_id,
-	MAX(fecha_registro) AS maxfec
-FROM
-	cbpo_colpatria.cons_asignacion
-GROUP BY
-	obligacion_id),
-baseasignacion AS (
-SELECT
-	c.estado,
-	c.fecha_registro,
-	c.asignacion_id,
-	c.campo1,
-	c.obligacion_id,
-	c.campo3,
-	c.deudor_id,
-	c.campo5,
-	c.campo6,
-	c.campo7,
-	c.campo8,
-	c.campo9,
-	c.campo10,
-	c.campo11,
-	c.campo12,
-	c.campo13,
-	c.campo14,
-	c.campo15,
-	c.campo16,
-	c.campo17,
-	c.campo18,
-	c.campo19,
-	c.campo20,
-	c.campo21,
-	c.campo22,
-	c.campo23,
-	c.campo24,
-	c.campo25,
-	c.campo26,
-	c.campo27,
-	c.campo28,
-	c.campo29,
-	c.campo30,
-	c.campo31,
-	c.campo32,
-	c.campo33,
-	c.campo34,
-	c.campo35
-FROM
-	cbpo_colpatria.cons_asignacion AS c
-INNER JOIN maxconsasg AS m ON
-	m.obligacion_id = c.obligacion_id
-	AND m.maxfec = c.fecha_registro ),
-mgactual AS (
-SELECT
-	mg.*,
-	i.contactability
-FROM
-	cbpo_colpatria.mejor_gestion AS mg
-INNER JOIN bi_snap.management_indicators AS i ON
-	i.indicator_desc = RTRIM(LTRIM(mg.indicador))
-WHERE
-	anio = (
-	SELECT
-		EXTRACT (YEAR
-	FROM
-		a.fecha_apertura)
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)
-	AND mes = (
-	SELECT
-		EXTRACT (MONTH
-	FROM
-		a.fecha_apertura)
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE) ),
-mg_1 AS (
-SELECT
-	*
-FROM
-	cbpo_colpatria.mejor_gestion AS mg
-WHERE
-	anio = (
-	SELECT
-		EXTRACT (YEAR
-	FROM
-		a.fecha_apertura)
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)
-	AND mes = (
-	SELECT
-		EXTRACT (MONTH
-	FROM
-		a.fecha_apertura)-1
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE) ),
-mg_2 AS (
-SELECT
-	*
-FROM
-	cbpo_colpatria.mejor_gestion AS mg
-WHERE
-	anio = (
-	SELECT
-		EXTRACT (YEAR
-	FROM
-		a.fecha_apertura)
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)
-	AND mes = (
-	SELECT
-		EXTRACT (MONTH
-	FROM
-		a.fecha_apertura)-2
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)) ,
-mg_3 AS (
-SELECT
-	*
-FROM
-	cbpo_colpatria.mejor_gestion AS mg
-WHERE
-	anio = (
-	SELECT
-		EXTRACT (YEAR
-	FROM
-		a.fecha_apertura)
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)
-	AND mes = (
-	SELECT
-		EXTRACT (MONTH
-	FROM
-		a.fecha_apertura)-3
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)) ,
-mg_4 AS (
-SELECT
-	*
-FROM
-	cbpo_colpatria.mejor_gestion AS mg
-WHERE
-	anio = (
-	SELECT
-		EXTRACT (YEAR
-	FROM
-		a.fecha_apertura)
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE)
-	AND mes = (
-	SELECT
-		EXTRACT (MONTH
-	FROM
-		a.fecha_apertura)-4
-	FROM
-		cbpo_colpatria.asignaciones AS a
-	WHERE
-		a.estado IS TRUE) ),
-telposbase AS (
-SELECT
-	tp.deudor_id,
-	MAX(fec_ultima_marcacion) AS fec
-FROM
-	cbpo_colpatria.telefonos_positivos AS tp
-INNER JOIN base AS b ON
-	b.deudor_id = tp.deudor_id
-GROUP BY
-	tp.deudor_id),
-telposmaxmarc AS (
-SELECT
-	tb.deudor_id,
-	MAX(tp.marcaciones) AS maxmarc,
-	tp.fec_ultima_marcacion
-FROM
-	telposbase AS tb
-INNER JOIN cbpo_colpatria.telefonos_positivos AS tp ON
-	tp.deudor_id = tb.deudor_id
-	AND tp.fec_ultima_marcacion = tb.fec
-GROUP BY
-	tb.deudor_id,
-	tp.fec_ultima_marcacion),
-telpos AS (
-SELECT
-	tp.deudor_id,
-	tp.fec_ultima_marcacion,
-	tp.marcaciones,
-	tp.telefono
-FROM
-	telposmaxmarc AS t
-INNER JOIN cbpo_colpatria.telefonos_positivos AS tp ON
-	tp.fec_ultima_marcacion = t.fec_ultima_marcacion
-	AND tp.deudor_id = t.deudor_id
-	AND tp.marcaciones = t.maxmarc),
-basecomp AS (
-SELECT
-	obligacion_id,
-	fecha_pago,
-	fecha_compromiso,
-	valor,
-	asesor
-FROM
-	cbpo_colpatria.compromisos
-WHERE
-	fecha_compromiso >= (
-	SELECT
-		fecha_apertura
-	FROM
-		cbpo_colpatria.asignaciones
-	WHERE
-		estado IS TRUE)),
-conteocomp AS (
-SELECT
-	obligacion_id,
-	COUNT(obligacion_id) AS contcomp
-FROM
-	basecomp
-GROUP BY
-	obligacion_id),
-maxfecpago AS (
-SELECT
-	obligacion_id,
-	MAX(fecha_pago) AS maxfecpag
-FROM
-	basecomp
-GROUP BY
-	obligacion_id),
-maxfeccompromiso AS (
-SELECT
-	mfp.obligacion_id,
-	mfp.maxfecpag,
-	MAX(b.fecha_compromiso) AS maxfeccomp
-FROM
-	maxfecpago AS mfp
-INNER JOIN basecomp AS b ON
-	b.obligacion_id = mfp.obligacion_id
-	AND b.fecha_pago = mfp.maxfecpag
-GROUP BY
-	mfp.obligacion_id,
-	mfp.maxfecpag),
-basecompromisos AS (
-SELECT
-	m.obligacion_id,
-	m.maxfecpag,
-	m.maxfeccomp,
-	b.valor,
-	b.asesor,
-	c.contcomp
-FROM
-	maxfeccompromiso AS m
-INNER JOIN basecomp AS b ON
-	b.obligacion_id = m.obligacion_id
-	AND b.fecha_pago = m.maxfecpag
-	AND b.fecha_compromiso = m.maxfeccomp
-INNER JOIN conteocomp AS c ON
-	c.obligacion_id = m.obligacion_id )
-SELECT
-	DISTINCT b.rownumber,
-	b.obligacion_id,
-	b.deudor_id,
-	u.unico,
-	a.estado,
-	t.tipo_cliente,
-	a.campo3 AS nombre,
-	a.campo1 AS producto,
-	CASE WHEN r.dias_mora_actual = 0 THEN '0 (0 DPD)'
-	WHEN r.dias_mora_actual > 0
-	AND r.dias_mora_actual <= 30 THEN '1 (1 To 30 DPD)'
-	WHEN r.dias_mora_actual > 30
-	AND r.dias_mora_actual <= 60 THEN '2 (31 To 60 DPD)'
-	WHEN r.dias_mora_actual > 60
-	AND r.dias_mora_actual <= 90 THEN '3 (61 To 90 DPD)'
-	WHEN r.dias_mora_actual > 90
-	AND r.dias_mora_actual <= 120 THEN '4 (91 To 120 DPD)'
-	WHEN r.dias_mora_actual > 120
-	AND r.dias_mora_actual <= 150 THEN '5 (121 To 150 DPD)'
-	WHEN r.dias_mora_actual > 150
-	AND r.dias_mora_actual <= 180 THEN '6 (151 To 180 DPD)'
-	WHEN r.dias_mora_actual > 180 THEN '6+(Greater than 180 DPD)' END AS initial_bucket,
-	a.campo5 AS ciudad,
-	a.campo6 AS sucursal,
-	a.campo7 AS tipo_prod,
-	r.dias_mora_inicial,
-	r.dias_mora_actual,
-	r.rango_mora_inicial,
-	r.rango_mora_final,
-	r.rango,
-	'$ ' || sp.sumpareto AS suma_pareto,
-	CASE WHEN a.campo1 = '2'
-	AND si.saldo_capital >= 100000000 THEN '1. > A 100 MM'
-	WHEN a.campo1 = '2'
-	AND si.saldo_capital >= 50000000
-	AND si.saldo_capital < 100000000 THEN '2. DE 50 MM A 100 MM'
-	WHEN a.campo1 = '2'
-	AND si.saldo_capital >= 20000000
-	AND si.saldo_capital < 50000000 THEN '3. DE 20 MM A 50 MM'
-	WHEN a.campo1 = '2'
-	AND si.saldo_capital >= 10000000
-	AND si.saldo_capital < 20000000 THEN '4. DE 10 MM A 20 MM'
-	WHEN a.campo1 = '2'
-	AND si.saldo_capital >= 5000000
-	AND si.saldo_capital < 10000000 THEN '5. DE 5 MM A 10 MM'
-	WHEN a.campo1 = '2'
-	AND si.saldo_capital >= 2000000
-	AND si.saldo_capital < 5000000 THEN '6. DE 2 MM A 5 MM'
-	WHEN a.campo1 = '2'
-	AND si.saldo_capital >= 1000000
-	AND si.saldo_capital < 2000000 THEN '7. DE 1 MM A 2 MM'
-	WHEN a.campo1 = '2'
-	AND si.saldo_capital < 1000000 THEN '8. > 1 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 50000000 THEN '1. > 50 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 20000000
-	AND si.saldo_capital < 50000000 THEN '2. DE 20 MM A 50 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 10000000
-	AND si.saldo_capital < 20000000 THEN '3. DE 10 MM A 20 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 5000000
-	AND si.saldo_capital < 10000000 THEN '4. DE 5 MM A 10 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 3000000
-	AND si.saldo_capital < 5000000 THEN '5. DE 3 MM A 5 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 2000000
-	AND si.saldo_capital < 3000000 THEN '6. DE 2 MM A 3 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 1500000
-	AND si.saldo_capital < 2000000 THEN '7. DE 1.5 MM A 2 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 1000000
-	AND si.saldo_capital < 1500000 THEN '8. DE 1 MM A 1.5 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital >= 500000
-	AND si.saldo_capital < 1000000 THEN '9. DE 500 M A 1 MM'
-	WHEN a.campo1 = '6'
-	AND si.saldo_capital < 500000 THEN '10. < 500 M' END AS rango_pareto,
-	a.campo9 AS fcast,
-	TO_CHAR(CASE WHEN length(a.campo10) < 8 THEN NULL ELSE TO_DATE(a.campo10, 'YYYYMMDD') END, 'DD/MM/YYYY') AS fdesem,
-	'$ ' || SUBSTRING(a.campo11, 1, STRPOS(a.campo11, '.')-1)::INT8 AS vrdesem,
-	'$ ' || si.saldo_deuda AS saldo_total_inicial,
-	'$ ' || sa.saldo_deuda AS saldo_total_actual,
-	'$ ' || si.saldo_capital AS saldo_capital_inicial,
-	'$ ' || sa.saldo_capital AS saldo_capital_actual,
-	'$ ' || si.saldo_venc_inicial AS saldo_vencido_inicial,
-	'$ ' || sa.saldo_venc_actual AS saldo_vencido_actual,
-	'$ ' || SUBSTRING(a.campo15, 1, STRPOS(a.campo15, '.')-1)::INT8 AS pagomin,
-	TO_CHAR(CASE WHEN length(a.campo16) < 8 THEN NULL ELSE TO_DATE(a.campo16, 'YYYYMMDD') END, 'DD/MM/YYYY') AS fultpago,
-	'$ ' || SUBSTRING(a.campo17, 1, STRPOS(a.campo17, '.')-1)::INT8 AS VRULTPAGO,
-	a.campo18 AS agencia,
-	REPLACE(substring(a.campo19,strpos(a.campo19,'.')-2,length(a.campo19)-strpos(a.campo19,'.')),'.',',') AS TASAINTER, 
-	TO_CHAR(CASE WHEN length(a.campo32) < 8 THEN NULL ELSE TO_DATE(a.campo32, 'YYYYMMDD') END, 'DD/MM/YYYY') AS FEULTREF,
-	TO_CHAR(CASE WHEN length(a.campo33) < 8 THEN NULL ELSE TO_DATE(a.campo33, 'YYYYMMDD') END, 'DD/MM/YYYY') AS ULTCOND,
-	TO_CHAR(CASE WHEN length(a.campo34) < 8 THEN NULL ELSE TO_DATE(a.campo34, 'YYYYMMDD') END, 'DD/MM/YYYY') AS FASIGNA,
-	a.campo35 AS EQASICAMPANA,
-	'' AS diferencia_pago,
-	'$ ' || p.total_pagos AS pago_preliminar,
-	NULL AS pago_cliente,
-	'' AS MIN,
-	NULL AS tarifa,
-	'' AS honorarios,
-	m4.indicador AS perfil_mes_4,
-	m3.indicador AS perfil_mes_3,
-	m2.indicador AS perfil_mes_2,
-	m1.indicador AS perfil_mes_1,
-	m.fecha_primer_gestion,
-	m.fecha_ultima_gestion,
-	m.indicador AS perfil_mes_actual,
-	CASE WHEN m.contactability = 0 THEN 'No contacto'
-	ELSE 'Contacto' END contactabilidad,
-	m.ultimo_alo,
-	m.descod1,
-	m.descod2,
-	m.asesor,
-	m.fecha_gestion,
-	m.phone AS telefono_mejor_gestion,
-	md.indicador AS mejorgestionhoy,
-	CASE WHEN m.repeticion IS NULL THEN 0
-	ELSE m.repeticion END ,
-	CASE WHEN m.llamadas IS NULL THEN 0
-	ELSE m.llamadas END ,
-	CASE WHEN m.sms IS NULL THEN 0
-	ELSE m.sms END ,
-	CASE WHEN m.correos IS NULL THEN 0
-	ELSE m.correos END ,
-	CASE WHEN m.gescall IS NULL THEN 0
-	ELSE m.gescall END ,
-	CASE WHEN m.visitas IS NULL THEN 0
-	ELSE m.visitas END ,
-	CASE WHEN m.whatsapp IS NULL THEN 0
-	ELSE m.whatsapp END ,
-	CASE WHEN m.no_contacto IS NULL THEN 0
-	ELSE m.no_contacto END ,
-	(CASE WHEN m.llamadas IS NULL THEN 0
-	ELSE m.llamadas END +
-	CASE WHEN m.sms IS NULL THEN 0
-	ELSE m.sms END +
-	CASE WHEN m.correos IS NULL THEN 0
-	ELSE m.correos END +
-	CASE WHEN m.gescall IS NULL THEN 0
-	ELSE m.gescall END +
-	CASE WHEN m.visitas IS NULL THEN 0
-	ELSE m.visitas END +
-	CASE WHEN m.whatsapp IS NULL THEN 0
-	ELSE m.whatsapp END +
-	CASE WHEN m.no_contacto IS NULL THEN 0
-	ELSE m.no_contacto END ) AS total_gestiones,
-	tp.telefono AS telefono_positivo,
-	tp.marcaciones AS marcaciones_telefono_positivo,
-	TO_CHAR(tp.fec_ultima_marcacion, 'DD/MM/YYYY') AS ultima_marcacion_telefono_positivo,
-	TO_CHAR(bc.maxfeccomp, 'DD/MM/YYYY') AS fec_creacion_ult_compromiso,
-	TO_CHAR(bc.maxfecpag, 'DD/MM/YYYY') AS fec_pactada_ult_compromiso,
-	bc.valor AS valor_acordado_ult_compromiso,
-	bc.asesor AS asesor_ult_compromiso,
-	bc.contcomp AS cantidad_acuerdos_mes,
-	CASE WHEN up.maxpagofec IS NOT NULL
-	AND up.maxpagofec >= bc.maxfeccomp THEN 'Cumplido'
-	WHEN up.maxpagofec IS NOT NULL
-	AND up.maxpagofec >= m.fecha_primer_gestion THEN 'Pago con gestion'
-	WHEN up.maxpagofec IS NOT NULL
-	AND up.maxpagofec < m.fecha_primer_gestion THEN 'Pago sin gestion'
-	WHEN up.maxpagofec IS NULL
-	AND CURRENT_DATE + 1 = bc.maxfecpag THEN 'Falta 1 dia'
-	WHEN up.maxpagofec IS NULL
-	AND CURRENT_DATE + 2 = bc.maxfecpag THEN 'Falta 2 dias'
-	WHEN up.maxpagofec IS NULL
-	AND CURRENT_DATE = bc.maxfecpag THEN 'Debe pagar hoy'
-	WHEN up.maxpagofec IS NULL
-	AND CURRENT_DATE > bc.maxfecpag THEN 'Incumplido'
-	WHEN up.maxpagofec IS NULL
-	AND CURRENT_DATE <= bc.maxfecpag THEN 'Vigente'
-	WHEN bc.maxfecpag IS NULL THEN 'Sin acuerdo' END AS estado_acuerdo
-FROM
-	base AS b
-INNER JOIN unicos AS u ON
-	u.obligacion_id = b.obligacion_id
-INNER JOIN tipocliente AS t ON
-	t.deudor_id = b.deudor_id
-INNER JOIN rangocliente AS r ON
-	r.obligacion_id = b.obligacion_id
-INNER JOIN saldovencinicial AS si ON
-	si.obligacion_id = b.obligacion_id
-INNER JOIN saldovencactual AS sa ON
-	sa.obligacion_id = b.obligacion_id
-INNER JOIN sumapareto AS sp ON
-	sp.deudor_id = b.deudor_id
-LEFT JOIN totalpagos AS p ON
-	p.obligacion_id = b.obligacion_id
-LEFT JOIN baseasignacion AS a ON
-	a.obligacion_id = b.obligacion_id
-LEFT JOIN mgactual AS m ON
-	m.deudor_id = b.deudor_id
-LEFT JOIN mg_1 AS m1 ON
-	m1.deudor_id = b.deudor_id
-LEFT JOIN mg_2 AS m2 ON
-	m2.deudor_id = b.deudor_id
-LEFT JOIN mg_3 AS m3 ON
-	m3.deudor_id = b.deudor_id
-LEFT JOIN mg_4 AS m4 ON
-	m4.deudor_id = b.deudor_id
-LEFT JOIN telpos AS tp ON
-	tp.deudor_id = b.deudor_id
-LEFT JOIN cbpo_colpatria.mejor_gestion_dia AS md ON
-	md.deudor_id = b.deudor_id
-LEFT JOIN basecompromisos AS bc ON
-	bc.obligacion_id = b.obligacion_id
-LEFT JOIN ultimopagofec AS up ON
-	up.obligacion_id = b.obligacion_id;
+WITH base AS (SELECT DISTINCT o.deudor_id 
+			  FROM cbpo_falabella.obligaciones_asignacion AS oa 
+			  INNER JOIN cbpo_falabella.obligaciones AS o 
+			  ON o.obligacion_id = oa.obligacion_id
+			  WHERE oa.asignacion_id = (SELECT a.asignacion_id 
+			  						    FROM cbpo_falabella.asignaciones AS a 
+			  						    WHERE a.estado IS TRUE)),
+consa AS (SELECT m.* 
+		  FROM cbpo_falabella.mejor_gestion AS m 
+		  LEFT JOIN base AS b 
+		  ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date )),
+consb AS (SELECT m.deudor_id,indicador 
+	      FROM cbpo_falabella.mejor_gestion AS m 
+	      LEFT JOIN base AS b 
+	      ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
+consc AS (SELECT m.deudor_id,indicador 
+          FROM cbpo_falabella.mejor_gestion AS m 
+          LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+          WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
+consd AS (SELECT m.deudor_id,indicador 
+		  FROM cbpo_falabella.mejor_gestion AS m 
+		  LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
+conse AS (SELECT m.deudor_id,indicador 
+	      FROM cbpo_falabella.mejor_gestion AS m 
+	      LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
+basemejorgestion AS (SELECT DISTINCT bs.deudor_id,
+							a.mes, 
+							a.anio, 
+							a.indicador, 
+							a.repeticion, 
+							a.llamadas, 
+							a.sms, 
+							a.correos, 
+							a.gescall, 
+					  		a.whatsapp,
+					  		a.no_contacto,
+					  		CASE WHEN a.llamadas IS NULL THEN 0 ELSE a.llamadas END +
+					  		CASE WHEN a.sms IS NULL THEN 0 ELSE a.sms END +
+					  		CASE WHEN a.correos IS NULL THEN 0 ELSE a.correos END +
+					  		CASE WHEN a.gescall IS NULL THEN  0 ELSE a.gescall END +
+					  		CASE WHEN a.whatsapp IS NULL THEN 0 ELSE a.whatsapp END +
+					  		CASE WHEN a.no_contacto IS NULL THEN  0 ELSE a.no_contacto END AS total_gestiones, 
+					  		a.fecha_gestion, a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, 
+					  a.ultimo_alo,b.indicador AS ind_m1,c.indicador AS ind_m2,d.indicador AS ind_m3,e.indicador AS ind_m4,i.contactability 
+					  FROM base AS bs
+					  LEFT JOIN consa	AS a ON a.deudor_id = bs.deudor_id					
+					  LEFT JOIN consb AS b ON b.deudor_id = bs.deudor_id
+					  LEFT JOIN consc AS c ON c.deudor_id = bs.deudor_id
+					  LEFT JOIN consd AS d ON d.deudor_id = bs.deudor_id
+					  LEFT JOIN conse AS e ON e.deudor_id = bs.deudor_id
+					  LEFT JOIN bi_snap.management_indicators AS i ON i.indicator_desc = trim(a.indicador)
+					  GROUP BY bs.deudor_id,a.mes,a.anio,a.indicador,a.repeticion, 
+							a.llamadas,a.sms,a.correos,a.gescall,a.whatsapp,a.no_contacto,a.fecha_gestion,
+							a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, 
+					  		a.ultimo_alo,b.indicador,c.indicador,d.indicador,e.indicador,i.contactability),
+basetelpos AS (SELECT ROW_NUMBER () OVER (PARTITION BY tpf.deudor_id 
+										  ORDER BY tpf.fec_ultima_marcacion DESC , tpf.marcaciones DESC ,tpf.deudor_id DESC ,tpf.telefono DESC) AS contador,
+			   tpf.deudor_id,tpf.fec_ultima_marcacion,tpf.telefono,tpf.marcaciones 
+			   FROM cbpo_falabella.telefonos_positivos AS tpf 
+			   WHERE deudor_id != '' 
+			   ORDER BY tpf.deudor_id,contador),
+telefonospositivos AS (SELECT deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),
+basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY obligacion_id 
+											   ORDER BY fecha_compromiso DESC , fecha_pago DESC ,valor DESC ,asesor DESC) AS contador,	
+						obligacion_id,
+						valor,
+						fecha_compromiso,
+						fecha_pago,asesor 
+					FROM cbpo_falabella.compromisos 
+					WHERE obligacion_id != ''
+					AND fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado =  TRUE)),
+compromisos AS (SELECT * 
+				FROM basecompromisos 
+				WHERE contador = 1),
+pagos AS (SELECT obligacion_id,sum(pago_valor) AS valor_pago ,max(pago_fecha) AS fecha_pago 
+		  FROM cbpo_falabella.pagos
+		  WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado =  TRUE)
+		  GROUP BY obligacion_id),
+sumasaldot AS (SELECT deudor_id,SUM(ROUND(REPLACE(saldo_total,',','.')::NUMERIC)) AS saldopareto 
+			   FROM cbpo_falabella.cons_asignacion 
+			   WHERE fecha_registro = (SELECT max(fecha_registro) 
+			   						   FROM cbpo_falabella.cons_asignacion) 
+			   						   GROUP BY deudor_id),
+sumaparetocart AS (SELECT grupo,rango,SUM(ROUND(REPLACE(saldo_total,',','.')::NUMERIC)) AS sumaparetocartera 
+			       FROM cbpo_falabella.cons_asignacion 
+			       WHERE fecha_registro = (SELECT max(fecha_registro) 
+			                               FROM cbpo_falabella.cons_asignacion) 
+			                               GROUP BY grupo,rango),
+unicopro AS (SELECT DISTINCT deudor_id,obligacion_id,
+			CASE WHEN grupo::NUMERIC = 3 THEN 'Consumo'
+			     WHEN grupo::NUMERIC = 5 THEN 'Tarjeta'
+			     WHEN grupo::NUMERIC = 6 THEN 'Sobregiro'
+			END || ' '|| upper(RIGHT(rango,length(rango)-(strpos(rango,')') +1))) AS cartera,
+		     ROW_NUMBER () OVER (PARTITION BY deudor_id,CASE WHEN grupo::NUMERIC = 3 THEN 'Consumo'
+																					     WHEN grupo::NUMERIC = 5 THEN 'Tarjeta'
+																					     WHEN grupo::NUMERIC = 6 THEN 'Sobregiro'
+																					END || ' '|| upper(RIGHT(rango,length(rango)-(strpos(rango,')') +1))) 
+																		ORDER BY deudor_id DESC,CASE WHEN grupo::NUMERIC = 3 THEN 'Consumo'
+																								     WHEN grupo::NUMERIC = 5 THEN 'Tarjeta'
+																								     WHEN grupo::NUMERIC = 6 THEN 'Sobregiro'
+																								END || ' '|| upper(RIGHT(rango,length(rango)-(strpos(rango,')') +1)))) AS cont_up 
+			 FROM cbpo_falabella.cons_asignacion WHERE fecha_registro = (SELECT max(fecha_registro) 
+			 															 FROM cbpo_falabella.cons_asignacion)					 
+			 															 ORDER BY deudor_id),
+maxfectreest AS (SELECT DISTINCT cuenta,max(periodo) AS maxrest 
+			     FROM cbpo_falabella.reestructuraciones 
+				 WHERE periodo >= ((SELECT max(periodo) 
+				 					FROM cbpo_falabella.reestructuraciones) - 5)
+				 GROUP BY cuenta),
+sumacuotas AS (SELECT DISTINCT 
+	obligacion_id,vencto,
+	CASE WHEN ROUND(REPLACE(cuota_vcda1,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda1,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda2,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda2,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda3,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda3,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda4,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda4,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda5,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda5,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda6,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda6,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda7,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda7,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda8,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda8,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda9,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda9,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda10,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda10,',','.')::NUMERIC) END
+	+ CASE WHEN ROUND(REPLACE(cuota_vcda11,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda11,',','.')::NUMERIC) END
+	+ CASE WHEN EXTRACT (MONTH FROM CASE WHEN fecha_venc12 = '0,00' OR fecha_venc12 IS NULL THEN NULL ELSE fecha_venc12::DATE END) = EXTRACT (MONTH FROM current_date)  
+	       THEN 0 ELSE ROUND(REPLACE(cuota_vcda12,',','.')::NUMERIC) 
+	  END AS totalcuotas
+	FROM cbpo_falabella.cons_asignacion
+	WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado IS TRUE)
+	AND fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_asignacion)
+	AND unidad_nombre = 'Prejuridico'
+	GROUP BY obligacion_id,fecha_registro,vencto,cuota_vcda1,cuota_vcda2,cuota_vcda3,cuota_vcda4,cuota_vcda5,cuota_vcda6,
+cuota_vcda7,cuota_vcda8,cuota_vcda9,cuota_vcda10,cuota_vcda11,cuota_vcda12,fecha_venc12
+ORDER BY obligacion_id,vencto)---- aqui			 
+SELECT DISTINCT 
+ca.tipo_producto_asignacion,
+ca.grupo,
+CASE WHEN ca.grupo::NUMERIC = 3 THEN 'CONSUMO'
+     WHEN ca.grupo::NUMERIC = 5 THEN 'TARJETA'
+     WHEN ca.grupo::NUMERIC = 6 THEN 'SOBREJIRO'
+END || ' '|| upper(RIGHT(ca.rango,length(ca.rango)-(strpos(ca.rango,')') +1))) AS cartera,
+t.tipo_cliente,
+u.unico::TEXT ,
+CASE WHEN up.cont_up != 1 THEN '0' ELSE '1' END AS unico_pro,
+ca.obligacion_id,
+ca.deudor_id,
+ca.nombre,
+CASE WHEN ca.grupo::NUMERIC = 3 THEN 'CONSUMO'
+     WHEN ca.grupo::NUMERIC = 5 THEN 'TARJETA'
+     WHEN ca.grupo::NUMERIC = 6 THEN 'SOBREJIRO'
+END AS producto, 
+'$ ' || ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) AS saldototal,
+'$ ' || s.saldopareto AS saldo_pareto,
+'' AS segmentacion,
+REPLACE (ROUND(ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) / sp.sumaparetocartera,4) * 100||' %','.',',') AS peso,
+ca.dias_mora_asignacion::NUMERIC + (current_date - (SELECT DISTINCT min(fecha_registro) 
+													FROM cbpo_falabella.cons_asignacion 
+													WHERE asignacion_id = (SELECT asignacion_id 
+																		   FROM cbpo_falabella.asignaciones 
+																		   WHERE estado IS TRUE ))) AS alturamora_hoy,
+'(0'||substring(ca.rango,2,2)::NUMERIC - 1||')'||' '||RIGHT(ca.rango,length(ca.rango)-(strpos(ca.rango,')') +1)) AS rango,																		   
+ROUND(ca.dias_mora_asignacion::NUMERIC)  AS dias_mora,
+ca.vencto,
+CASE WHEN mg.indicador IS NULL THEN 'SIN GESTION' ELSE mg.indicador END AS mejor_gestion,
+mg.total_gestiones::TEXT ,
+mg.fecha_ultima_gestion,
+mg.asesor AS asesor_mejor_gestion,
+cp.fecha_compromiso,
+cp.fecha_pago AS fecha_pago_compromiso,
+'$ ' ||cp.valor AS valor_compromiso,
+CASE 
+	WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
+	WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
+	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = cp.fecha_pago THEN 'Falta 2 dias'
+	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = cp.fecha_pago THEN 'Falta 1 dia'
+	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date = cp.fecha_pago THEN 'Debe pagar hoy'
+	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= cp.fecha_pago THEN 'Vigente'
+	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN cp.fecha_pago + 1 AND cp.fecha_pago + 2  THEN 'Pendiente'
+	WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago >= sc.totalcuotas THEN 'Cumplido'
+	WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago < sc.totalcuotas THEN 'Pago parcial'
+	WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
+END AS estado_acuerdo,
+pa.dias_mora::NUMERIC AS dias_mora_pagos,
+'$ ' || p.valor_pago AS valor_pago,
+p.fecha_pago,
+NULL AS pagos_reales,
+'$ ' || CASE WHEN CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
+	   		           WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+			           WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+			      END  = 'NORMALIZADO' AND p.valor_pago >= sc.totalcuotas THEN sc.totalcuotas
+             WHEN CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
+		   		        WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+				        WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+				  END  = 'NORMALIZADO' AND p.valor_pago < sc.totalcuotas THEN p.valor_pago
+			 WHEN CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
+   		               WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+		               WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+		  		  END  != 'DETERIORO' THEN 	p.valor_pago	  
+END AS pago_para_honorarios,
+'$ ' || CASE WHEN CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
+	   		           WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+			           WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+			      END  = 'NORMALIZADO' AND p.valor_pago >= sc.totalcuotas THEN sc.totalcuotas - ((sc.totalcuotas * gc.porcentaje_gasto) / 100)
+             WHEN CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
+		   		        WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+				        WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+				  END  = 'NORMALIZADO' AND p.valor_pago < sc.totalcuotas THEN p.valor_pago - ((p.valor_pago * gc.porcentaje_gasto) / 100)
+			 WHEN CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
+   		               WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+		               WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+		  		  END  != 'DETERIORO' THEN 	ROUND(p.valor_pago - ((p.valor_pago * gc.porcentaje_gasto) / 100))	  
+		END AS pago_para_factura,
+'$ '||sc.totalcuotas AS pendiente,
+CASE WHEN ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) - p.valor_pago <= 0 THEN 'Si' 
+ELSE 'No' 
+END AS pago_total,
+CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
+     WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+     WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+END AS nvo_status,
+ca.estado_falabella AS status_refresque, 
+CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_refresque::NUMERIC THEN 'DETERIORO'
+     WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+     WHEN pa.dias_mora::NUMERIC <= ca.dias_refresque::NUMERIC THEN 'RETENIDO'
+END AS nvo_status_refresque,
+ca.dias_refresque::NUMERIC AS dias_mora_refresque,
+'$ '||(ROUND((sc.totalcuotas * gc.porcentaje_gasto) / 100 ) + sc.totalcuotas) AS pendiente_mas_gastos, 
+'$ '||(CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+     														   AND ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+     														   AND ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+     														   AND ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+END +  ROUND((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+		    WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+	        WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	           															 AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+	        WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	           															 AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+	           															 AND ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+	        WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	                                                                     AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+	                                                                     AND ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+	                                                                     AND ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+		ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+        END * gc.porcentaje_gasto)/ 100)) AS vencida_mas_gastos,
+'$ ' || (ROUND((sc.totalcuotas * gc.porcentaje_gasto) / 100 )) AS gastos_mora,
+'$ ' || (ROUND((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+		    WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+	        WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	           															 AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+	        WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	           															 AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+	           															 AND ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+	        WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	                                                                     AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+	                                                                     AND ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+	                                                                     AND ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+		ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+        END * gc.porcentaje_gasto)/ 100)) AS gastos_cv,
+gc.porcentaje_gasto||' %' AS porcentaje_gasto,        
+'$ ' || (CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+	     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+	     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+	     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	                                                               AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+	                                                               AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+	     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+	     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+	     														   AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+	     														   AND  ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+	ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+END) AS valor_a_mantener_sin_gxc,
+'$ ' || (ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )) AS cv8, 
+'$ ' || (ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )) AS cv9,
+'$ ' || (ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )) AS cv10,
+'$ ' || (ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )) AS cv11,
+'$ ' || (ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )) AS cv12,
+'$ '||(CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
+	 ELSE NULL 
+END)||' / '||'$ '||CASE WHEN ca.grupo::NUMERIC = 3 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
+								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+								 ELSE NULL 
+							END
+	 WHEN ca.grupo::NUMERIC = 5 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m
+								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+								 ELSE NULL 
+							END
+END||' / '||CASE WHEN aj.obligacion_id IS NULL THEN 'Si'
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN 'Si'
+	 ELSE 'No'
+END AS restructuracion,
+'$ ' || (CASE WHEN 
+				CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
+					 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
+			    ELSE NULL 
+				END IS NULL THEN 
+			CASE WHEN aj.obligacion_id IS NULL THEN ras.pago_minimo
+		     	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN ras.pago_minimo
+			ELSE NULL 
+			END
+		ELSE 
+			CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
+				 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
+			ELSE NULL 
+			END
+END) AS valor,
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN ras.pago_minimo
+		 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN ras.pago_minimo
+		 ELSE NULL 
+END) AS pagominimo_anterior,
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
+	 ELSE NULL 
+END) AS pagominimo_actual,
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota36m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota36m
+	 ELSE NULL 
+END) AS cuota36,
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota42m
+	 ELSE NULL 
+END) AS cuota42,
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+	 ELSE NULL 
+END) AS cuota60,
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota72m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota72m
+	 ELSE NULL 
+END ) AS cuota72,
+'$ ' || (CASE WHEN ca.grupo::NUMERIC = 3 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
+								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+								 ELSE NULL 
+							END
+	 WHEN ca.grupo::NUMERIC = 5 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m
+								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+								 ELSE NULL 
+							END
+END) AS proyectada_cargue,
+CASE WHEN aj.obligacion_id IS NULL THEN 'Si'
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN 'Si'
+	 ELSE 'No'
+END AS aplica_ajuste,
+CASE WHEN aj.obligacion_id IS NULL THEN res.periodo
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.periodo
+	 ELSE NULL 
+END AS fecha,
+'$ ' || ((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+		     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+		     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+		     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		     														   AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+		     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		     														   AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+		     														   AND  ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+		ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+		END + round((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+			   	              WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+			             ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+		   				 END * gc.porcentaje_gasto ) / 100)) - p.valor_pago) AS diferencia,
+REPLACE(round((CASE WHEN 			
+		CASE WHEN ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) = 0 THEN 0 ELSE 			
+		  ((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+			ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+			END + round((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+			   	              WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+			             ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+		   				 END * gc.porcentaje_gasto ) / 100)) - p.valor_pago) / ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) 
+			END <= 0 THEN 0 ELSE 
+	CASE WHEN ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) = 0 THEN 0 ELSE 			
+	  ((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+			     WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+			     														   AND  ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+			ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+			END + round((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
+			   	              WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )
+		                      WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) = 0 AND  ROUND(REPLACE(ca.cuota_vcda9,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC ) = 0 
+		                      															AND  ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+			             ELSE ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )
+		   				 END * gc.porcentaje_gasto ) / 100)) - p.valor_pago) / ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) 
+			END 
+END)::NUMERIC,2)||'%','.',',') AS porcentaje_saldo_total,
+'' AS x,
+'' AS valor,
+'' AS porcentaje_participacion,	
+mg.ind_m4,
+mg.ind_m3,
+mg.ind_m2,
+mg.ind_m1,
+mg.fecha_primer_gestion,
+mg.phone::TEXT AS telefono_mejor_gestion,
+mg.fecha_gestion,
+CASE WHEN mg.contactability IS NULL OR mg.contactability = 0 THEN 'No contacto' 
+	WHEN mg.contactability = 1 THEN 'Contacto'
+END AS contactabilidad, 
+md.indicador AS indicador_hoy, 
+mg.repeticion::TEXT ,
+mg.llamadas::TEXT ,
+mg.sms::TEXT ,
+mg.correos::TEXT ,
+mg.gescall::TEXT ,
+mg.whatsapp::TEXT ,
+mg.visitas::TEXT ,
+mg.no_contacto::TEXT ,
+tp.telefono::TEXT AS telefono_positivo,
+tp.fec_ultima_marcacion,
+CASE WHEN l.deudor_id IS NULL THEN 'No' 
+ELSE 'Si' 
+END AS lista_robinson
+FROM cbpo_falabella.cons_asignacion AS ca 
+LEFT JOIN cbpo_falabella.lista_robinson AS l 
+	ON l.deudor_id = ca.deudor_id
+LEFT JOIN cbpo_falabella.unicos AS u 
+	ON u.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_falabella.tipo_cliente AS t 
+	ON t.deudor_id = ca.deudor_id
+INNER JOIN sumasaldot AS s 
+	ON s.deudor_id = ca.deudor_id 
+INNER JOIN sumaparetocart AS sp 
+	ON sp.grupo = ca.grupo 
+	AND sp.rango = ca.rango
+LEFT JOIN pagos AS p 
+	ON p.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_falabella.pagos AS pa 
+	ON pa.obligacion_id = p.obligacion_id 
+	AND pa.pago_fecha = p.fecha_pago
+INNER JOIN unicopro AS up 
+	ON up.obligacion_id = ca.obligacion_id 
+LEFT JOIN cbpo_falabella.ajustes AS aj 
+	ON aj.obligacion_id = ca.obligacion_id
+LEFT JOIN maxfectreest AS r ON r.cuenta = ca.obligacion_id
+LEFT JOIN cbpo_falabella.reestructuraciones AS res 
+	ON res.cuenta = r.cuenta 
+	AND res.periodo = r.maxrest
+LEFT JOIN cbpo_falabella.reestructuraciones AS ras 
+	ON ras.cuenta = r.cuenta 
+	AND ras.periodo = r.maxrest - 5
+INNER JOIN sumacuotas AS sc ON sc.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_falabella.gastos_cobranza AS gc ON ca.dias_mora_asignacion::NUMERIC >= gc.mora_ini 
+	AND ca.dias_mora_asignacion::NUMERIC <= gc.mora_fin
+LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id
+LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
+LEFT JOIN cbpo_falabella.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
+LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
+WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_asignacion)
+AND ca.asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado = TRUE )
+AND ca.unidad_nombre = 'Prejuridico'
+ORDER BY ca.deudor_id;	
+
+

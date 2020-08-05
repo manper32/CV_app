@@ -1,0 +1,11 @@
+select distinct trim(deudor_id ) 
+				,row_number ()
+	 			OVER (PARTITION  BY	trim(deudor_id )
+				ORDER BY	trim(deudor_id ) desc,
+							direccion desc) AS ROWNUMBER
+				,direccion 
+from cbpo_propia.direcciones
+order by trim(deudor_id )desc,row_number ()
+	 			OVER (PARTITION  BY	trim(deudor_id )
+				ORDER BY	trim(deudor_id) desc,
+							direccion desc);
