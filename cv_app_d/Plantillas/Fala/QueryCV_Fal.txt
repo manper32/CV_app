@@ -106,7 +106,9 @@ unicopro AS (SELECT DISTINCT deudor_id,obligacion_id,
 			 FROM cbpo_falabella.cons_asignacion WHERE fecha_registro = (SELECT max(fecha_registro) 
 			 															 FROM cbpo_falabella.cons_asignacion)					 
 			 															 ORDER BY deudor_id),
-maxfectreest AS (SELECT DISTINCT cuenta,max(periodo) AS maxrest 
+maxfectreest AS (SELECT DISTINCT 
+				      cuenta,
+				      max(periodo) AS maxrest 
 			     FROM cbpo_falabella.reestructuraciones 
 				 WHERE periodo >= ((SELECT max(periodo) 
 				 					FROM cbpo_falabella.reestructuraciones) - 5)
@@ -285,21 +287,25 @@ END) AS valor_a_mantener_sin_gxc,
 '$ ' || (ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )) AS cv10,
 '$ ' || (ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )) AS cv11,
 '$ ' || (ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )) AS cv12,
-'$ '||(CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
-	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
-	 ELSE NULL 
-END)||' / '||'$ '||CASE WHEN ca.grupo::NUMERIC = 3 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
-								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
-								 ELSE NULL 
-							END
-	 WHEN ca.grupo::NUMERIC = 5 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m
-								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
-								 ELSE NULL 
-							END
-END||' / '||CASE WHEN aj.obligacion_id IS NULL THEN 'Si'
+concat(
+'$ ',CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo 
+			        WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
+			        WHEN aj.obligacion_id IS NOT NULL THEN NULL 
+			    END,' / ',
+'$ ',CASE WHEN ca.grupo::NUMERIC = 3 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
+												WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m 
+												WHEN aj.obligacion_id IS NOT NULL THEN NULL 
+										   END
+	       WHEN ca.grupo::NUMERIC = 5 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m 
+								                WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m 
+								                WHEN aj.obligacion_id IS NOT NULL THEN NULL 
+							               END
+       END,' / ',
+CASE WHEN aj.obligacion_id IS NULL THEN 'Si'
 	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN 'Si'
-	 ELSE 'No'
-END AS restructuracion,
+	 WHEN aj.obligacion_id IS NOT NULL THEN 'No'
+END)       
+ AS restructuracion,
 '$ ' || (CASE WHEN 
 				CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
 					 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
@@ -314,7 +320,7 @@ END AS restructuracion,
 				 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
 			ELSE NULL 
 			END
-END) AS valor,
+END) AS valor_restruc,
 '$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN ras.pago_minimo
 		 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN ras.pago_minimo
 		 ELSE NULL 
@@ -330,7 +336,7 @@ END) AS cuota36,
 '$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m
 	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota42m
 	 ELSE NULL 
-END) AS cuota42,
+END) AS cuota48,
 '$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
 	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
 	 ELSE NULL 
@@ -350,7 +356,7 @@ END ) AS cuota72,
 END) AS proyectada_cargue,
 CASE WHEN aj.obligacion_id IS NULL THEN 'Si'
 	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN 'Si'
-	 ELSE 'No'
+	 WHEN aj.obligacion_id IS NOT NULL THEN 'No'
 END AS aplica_ajuste,
 CASE WHEN aj.obligacion_id IS NULL THEN res.periodo
 	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.periodo
@@ -503,5 +509,4 @@ WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_a
 AND ca.asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado = TRUE )
 AND ca.unidad_nombre = 'Prejuridico'
 ORDER BY ca.deudor_id;	
-
 

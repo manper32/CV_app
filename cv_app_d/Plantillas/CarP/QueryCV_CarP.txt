@@ -138,7 +138,7 @@ SELECT
 	'$ '||cp.valor_compromiso AS valor_compromiso,
 	cp.fecha_compromiso,
 	cp.fecha_pactada_compromiso,
-	cp.asesor,
+	TRIM(cp.asesor),
 	CASE 
 		WHEN cp.fecha_pactada_compromiso IS NULL AND bp.valortotal IS NULL THEN 'Sin acuerdo'
 		WHEN cp.fecha_pactada_compromiso IS NULL AND bp.valortotal IS NOT NULL AND bp.valortotal > 0 THEN 'Pago sin compromiso' 
@@ -151,15 +151,15 @@ SELECT
 		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal < regexp_replace(ca.saldo_total_mes_vigente , '[^0-9]', '','g')::NUMERIC THEN 'Pago parcial'
 		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal IS NULL THEN 'Incumplido' 
 	END AS estado_acuerdo,
-	mg.ind_m4,
-	mg.ind_m3,
-	mg.ind_m2,
-	mg.ind_m1,
+	regexp_replace(mg.ind_m4, '[^a-zA-Z]', '', 'g'),
+	regexp_replace(mg.ind_m3, '[^a-zA-Z]', '', 'g'),
+	regexp_replace(mg.ind_m2, '[^a-zA-Z]', '', 'g'),
+	regexp_replace(mg.ind_m1, '[^a-zA-Z]', '', 'g'),
 	mg.fecha_primer_gestion,
 	mg.fecha_ultima_gestion,
-	CASE WHEN mg.indicador IS NULL THEN 'SIN GESTION' ELSE mg.indicador END AS indicador,
+	CASE WHEN mg.indicador IS NULL THEN 'SIN GESTION' ELSE regexp_replace(mg.indicador, '[^a-zA-Z]', '', 'g') END AS indicador,
 	mg.phone::TEXT AS telefono_mejor_gestion,
-	mg.asesor,
+	TRIM(mg.asesor),
 	mg.fecha_gestion,
 	CASE WHEN mg.contactability IS NULL OR mg.contactability = 0 THEN 'No contacto' 
 		WHEN mg.contactability = 1 THEN 'Contacto'
