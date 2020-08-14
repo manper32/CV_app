@@ -1,183 +1,199 @@
-   			WITH base AS (SELECT DISTINCT o.deudor_id FROM cbpo_claro.obligaciones_asignacion AS oa 
-						INNER JOIN cbpo_claro.obligaciones AS o ON o.obligacion_id = oa.obligacion_id
-						WHERE oa.asignacion_id = (SELECT a.asignacion_id FROM cbpo_claro.asignaciones AS a WHERE a.estado IS TRUE)),
-			consa AS (SELECT m.* FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date )),
-			consb AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
-			consc AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
-			consd AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
-			conse AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
-			basemejorgestion AS (SELECT DISTINCT bs.deudor_id,
-			a.mes, a.anio, a.indicador, a.repeticion, a.llamadas, a.sms, a.correos, a.gescall, a.whatsapp, a.no_contacto, a.fecha_gestion, a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, a.ultimo_alo,
-			b.indicador AS ind_m1,c.indicador AS ind_m2,d.indicador AS ind_m3,e.indicador AS ind_m4,i.contactability FROM base AS bs
-			LEFT JOIN consa	AS a ON a.deudor_id = bs.deudor_id					
-			LEFT JOIN consb AS b ON b.deudor_id = bs.deudor_id
-			LEFT JOIN consc AS c ON c.deudor_id = bs.deudor_id
-			LEFT JOIN consd AS d ON d.deudor_id = bs.deudor_id
-			LEFT JOIN conse AS e ON e.deudor_id = bs.deudor_id
-			LEFT JOIN bi_snap.management_indicators AS i ON i.indicator_desc = trim(a.indicador)),
-			basetelpos AS (SELECT ROW_NUMBER () OVER (PARTITION BY tpf.deudor_id
-								ORDER BY tpf.fec_ultima_marcacion DESC , tpf.marcaciones DESC ,tpf.deudor_id DESC ,tpf.telefono DESC) AS contador,
-								tpf.deudor_id,tpf.fec_ultima_marcacion,tpf.telefono,tpf.marcaciones FROM cbpo_claro.telefonos_positivos AS tpf WHERE deudor_id != '' ORDER BY tpf.deudor_id,contador),
-			telefonospositivos AS (SELECT deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),
-			basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY obligacion_id
-								ORDER BY fecha_compromiso DESC , fecha_pago DESC ,valor DESC ,asesor DESC) AS contador,	
-								obligacion_id,valor,fecha_compromiso,fecha_pago,asesor FROM cbpo_claro.compromisos WHERE obligacion_id != ''),
-			compromisos AS (SELECT * FROM basecompromisos WHERE contador = 1),
-			pagos AS (SELECT obligacion_id,sum(pago_valor) AS valor_pago ,max(pago_fecha) AS fecha_pago FROM cbpo_claro.pagos GROUP BY obligacion_id)
-			SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
-				ca.deudor_id,--2 
-				ca.obligacion_id,--3
-				ca.nombredelcliente,--4
-				ca.estado,--5
-				t.tipo_cliente,--6
-				u.unico,--7
-				ca.crmorigen,--8
-				ca.potencialmark,--9
-				ca.prepotencialmark,--10
-				ca.writeoffmark,--11
-				CASE WHEN ca.prepotencialmark = 'Y' THEN
-				CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
-				WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
-				WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' END
-				WHEN ca.potencialmark = 'Y' THEN
-				CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
-				WHEN ca.crmorigen = 'RR' THEN 'churn'
-				WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
-				WHEN ca.potencialmark = 'N'
-				AND ca.prepotencialmark = 'N'
-				AND ca.writeoffmark = 'N'
-				AND ca.debtageinicial = '0' THEN
-				CASE WHEN ca.valorscoring >= '60' THEN 'pp'
-				WHEN ca.valorscoring <'60' THEN 'flp' END
-				WHEN ca.potencialmark = 'Y' THEN 'Potencial'
-				WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
-				WHEN ca.debtageinicial = '30' THEN '30'
-				WHEN ca.debtageinicial = '60' THEN '60'
-				WHEN ca.debtageinicial = '90' THEN '90'
-				WHEN ca.debtageinicial = '120' THEN '120'
-				WHEN ca.debtageinicial = '150' THEN '150'
-				WHEN ca.debtageinicial = '180' THEN '180'
-				WHEN ca.debtageinicial = '210' THEN '210' END AS segmento_bpo,--12	
-				ca.valorscoring,--13
-				ca.numeroreferenciadepago,--14
-				'$ ' || round(ca.montoinicial::NUMERIC) AS monto_inicial,--15
-				'$ ' || round(ca.modinitcta::NUMERIC) AS monto_ini_cuenta,--16
-				CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN '% 0' ELSE '% ' || d.descuento END AS porcentaje_descuento,--17
-				'$ ' ||CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN 0 ELSE ROUND(((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100)) END AS valor_descuento,--18
-				'$ ' ||CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END AS valor_a_pagar,--19
-				'$ ' ||round(ca.deudarealcuenta::NUMERIC) AS deuda_real,--20 
-				'$ ' ||p.valor_pago AS valor_pago,--21
-				p.fecha_pago,--22
-				cp.fecha_compromiso,--23
-				cp.fecha_pago AS fecha_pago_compromiso,--24
-				'$ ' ||cp.valor AS valor_compromiso,--25
-				CASE 
-					WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
-					WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
-					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = cp.fecha_pago THEN 'Faltan 2 dias'
-					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = cp.fecha_pago THEN 'Falta 1 dia'
-					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date = cp.fecha_pago THEN 'Debe pagar hoy'
-					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= cp.fecha_pago THEN 'Vigente'
-					WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN cp.fecha_pago + 1 AND cp.fecha_pago + 2  THEN 'Pendiente'
-					WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago >= CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END THEN 'Cumplido'
-					WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago < CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END THEN 'Pago parcial'
-					WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
-				END AS estado_acuerdo,--26 	
-				mg.ind_m4,--27
-				mg.ind_m3,--28
-				mg.ind_m2,--29
-				mg.ind_m1,--30
-				mg.fecha_primer_gestion,--31
-				mg.fecha_ultima_gestion,--32
-				mg.indicador,--33
-				mg.phone,--34
-				mg.asesor,--35
-				mg.fecha_gestion,--36
-				CASE WHEN mg.contactability IS NULL OR mg.contactability = 0 THEN 'No contacto' 
-					WHEN mg.contactability = 1 THEN 'Contacto'
-				END AS contactabilidad, --37
-				md.indicador AS indicador_hoy, --38
-				CASE WHEN mg.repeticion IS NULL THEN 0 ELSE mg.repeticion END ,--39
-				CASE WHEN mg.llamadas IS NULL THEN 0 ELSE mg.llamadas END ,--40
-				CASE WHEN mg.sms IS NULL THEN 0 ELSE mg.sms END ,--41
-				CASE WHEN mg.correos IS NULL THEN 0 ELSE mg.correos END ,--42
-				CASE WHEN mg.gescall IS NULL THEN 0 ELSE mg.gescall END ,--43
-				CASE WHEN mg.whatsapp IS NULL THEN 0 ELSE mg.whatsapp END ,--44
-				CASE WHEN mg.visitas IS NULL THEN 0 ELSE mg.visitas END ,--45
-				CASE WHEN mg.no_contacto IS NULL THEN 0 ELSE mg.no_contacto END,--46
-				sum(
-					CASE WHEN mg.llamadas IS NULL THEN 0 ELSE mg.llamadas END +
-					CASE WHEN mg.sms IS NULL THEN 0 ELSE mg.sms END +
-					CASE WHEN mg.correos IS NULL THEN 0 ELSE mg.correos END +
-					CASE WHEN mg.gescall IS NULL THEN 0 ELSE mg.gescall END +
-					CASE WHEN mg.whatsapp IS NULL THEN 0 ELSE mg.whatsapp END +
-					CASE WHEN mg.visitas IS NULL THEN 0 ELSE mg.visitas END +
-					CASE WHEN mg.no_contacto IS NULL THEN 0 ELSE mg.no_contacto END
-					) AS total_gestiones,--47
-				round(tp.telefono) AS telefono_positivo,--48
-				tp.fec_ultima_marcacion--49
-			FROM cbpo_claro.cons_asignacion AS ca
-				LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id 
-				LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
-				LEFT JOIN cbpo_claro.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
-				LEFT JOIN cbpo_claro.unicos AS u ON u.obligacion_id = ca.obligacion_id
-				LEFT JOIN cbpo_claro.descuentos AS d ON d.segmento = 
-						CASE WHEN ca.prepotencialmark = 'Y' THEN
-						CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
-						WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
-						WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' END
-						WHEN ca.potencialmark = 'Y' THEN
-						CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
-						WHEN ca.crmorigen = 'RR' THEN 'churn'
-						WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
-						WHEN ca.potencialmark = 'N'
-						AND ca.prepotencialmark = 'N'
-						AND ca.writeoffmark = 'N'
-						AND ca.debtageinicial = '0' THEN
-						CASE WHEN ca.valorscoring >= '60' THEN 'pp'
-						WHEN ca.valorscoring <'60' THEN 'flp' END
-						WHEN ca.potencialmark = 'Y' THEN 'Potencial'
-						WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
-						WHEN ca.debtageinicial = '30' THEN '30'
-						WHEN ca.debtageinicial = '60' THEN '60'
-						WHEN ca.debtageinicial = '90' THEN '90'
-						WHEN ca.debtageinicial = '120' THEN '120'
-						WHEN ca.debtageinicial = '150' THEN '150'
-						WHEN ca.debtageinicial = '180' THEN '180'
-						WHEN ca.debtageinicial = '210' THEN '210' END			
-			LEFT JOIN cbpo_claro.exclusiones_descuentos AS ed ON ed.obligacion_id = ca.obligacion_id
-			LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
-			LEFT JOIN pagos AS p ON p.obligacion_id = ca.obligacion_id
-			LEFT JOIN cbpo_claro.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id 
-			WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_claro.cons_asignacion)
-			GROUP BY md.indicador,mg.contactability,ca.fecha_registro,ca.deudor_id,ca.obligacion_id,ca.crmorigen,ca.potencialmark,	ca.prepotencialmark,ca.writeoffmark,ca.valorscoring,ca.numeroreferenciadepago,
-			ca.estado,ca.nombredelcliente,ca.montoinicial,ca.modinitcta,ca.deudarealcuenta,p.valor_pago,p.fecha_pago,
-			CASE WHEN ca.prepotencialmark = 'Y' THEN
-				CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
-					WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
-					WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' 
-				END
-					WHEN ca.potencialmark = 'Y' THEN
-				CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
-					WHEN ca.crmorigen = 'RR' THEN 'churn'
-					WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
-					WHEN ca.potencialmark = 'N' AND ca.prepotencialmark = 'N' AND ca.writeoffmark = 'N' AND ca.debtageinicial = '0' THEN
-				CASE WHEN ca.valorscoring >= '60' THEN 'pp'
-					WHEN ca.valorscoring <'60' THEN 'flp' 
-				END
-					WHEN ca.potencialmark = 'Y' THEN 'Potencial'
-					WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
-					WHEN ca.debtageinicial = '30' THEN '30'
-					WHEN ca.debtageinicial = '60' THEN '60'
-					WHEN ca.debtageinicial = '90' THEN '90'
-					WHEN ca.debtageinicial = '120' THEN '120'
-					WHEN ca.debtageinicial = '150' THEN '150'
-					WHEN ca.debtageinicial = '180' THEN '180'
-					WHEN ca.debtageinicial = '210' THEN '210' 
-			END,
-			t.tipo_cliente,u.unico,
-			CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN '% 0' ELSE '% ' || d.descuento END,
-			CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN 0 ELSE ROUND(((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100)) END,
-			CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((ROUND(ca.modinitcta::NUMERIC ) - ((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100))) END,
-			mg.indicador,mg.repeticion,mg.llamadas,mg.sms,mg.correos,mg.gescall,mg.whatsapp,mg.no_contacto,mg.fecha_gestion,mg.visitas,mg.phone, mg.asesor,mg.fecha_primer_gestion,mg.fecha_ultima_gestion,
-			mg.ind_m1,mg.ind_m2,mg.ind_m3,mg.ind_m4,tp.telefono,tp.fec_ultima_marcacion,cp.fecha_compromiso,cp.fecha_pago,cp.valor;
+   WITH base AS (SELECT DISTINCT o.deudor_id FROM cbpo_claro.obligaciones_asignacion AS oa 
+                INNER JOIN cbpo_claro.obligaciones AS o ON o.obligacion_id = oa.obligacion_id
+                WHERE oa.asignacion_id = (SELECT a.asignacion_id FROM cbpo_claro.asignaciones AS a WHERE a.estado IS TRUE)),
+    consa AS (SELECT m.* FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date )),
+    consb AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
+    consc AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
+    consd AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
+    conse AS (SELECT m.deudor_id,indicador FROM cbpo_claro.mejor_gestion AS m LEFT JOIN base AS b ON b.deudor_id = m.deudor_id WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
+    basemejorgestion AS (SELECT DISTINCT bs.deudor_id,
+    a.mes, a.anio, a.indicador, a.repeticion, a.llamadas, a.sms, a.correos, a.gescall, a.whatsapp, a.no_contacto, a.fecha_gestion, a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, a.ultimo_alo,
+    b.indicador AS ind_m1,c.indicador AS ind_m2,d.indicador AS ind_m3,e.indicador AS ind_m4,i.contactability FROM base AS bs
+    LEFT JOIN consa AS a ON a.deudor_id = bs.deudor_id                  
+    LEFT JOIN consb AS b ON b.deudor_id = bs.deudor_id
+    LEFT JOIN consc AS c ON c.deudor_id = bs.deudor_id
+    LEFT JOIN consd AS d ON d.deudor_id = bs.deudor_id
+    LEFT JOIN conse AS e ON e.deudor_id = bs.deudor_id
+    LEFT JOIN bi_snap.management_indicators AS i ON i.indicator_desc = trim(a.indicador)),
+    basetelpos AS (SELECT ROW_NUMBER () OVER (PARTITION BY tpf.deudor_id
+                        ORDER BY tpf.fec_ultima_marcacion DESC , tpf.marcaciones DESC ,tpf.deudor_id DESC ,tpf.telefono DESC) AS contador,
+                        tpf.deudor_id,tpf.fec_ultima_marcacion,tpf.telefono,tpf.marcaciones FROM cbpo_claro.telefonos_positivos AS tpf WHERE deudor_id != '' ORDER BY tpf.deudor_id,contador),
+telefonospositivos AS (SELECT deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),
+basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY obligacion_id
+                    ORDER BY fecha_compromiso DESC , fecha_pago DESC ,valor DESC ,asesor DESC) AS contador, 
+                    obligacion_id,valor,fecha_compromiso,fecha_pago,asesor FROM cbpo_claro.compromisos WHERE obligacion_id != ''),
+compromisos AS (SELECT * FROM basecompromisos WHERE contador = 1 AND  fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_claro.asignaciones WHERE estado = TRUE )),
+pagos AS (SELECT obligacion_id,sum(pago_valor) AS valor_pago ,max(pago_fecha) AS fecha_pago 
+		  FROM cbpo_claro.pagos 
+		  WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_claro.asignaciones WHERE estado = TRUE )
+		GROUP BY obligacion_id)
+SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
+    ca.deudor_id,--2 
+    ca.obligacion_id,--3
+    ca.nombredelcliente,--4
+    ca.estado,--5
+    t.tipo_cliente,--6
+    u.unico,--7
+    ca.crmorigen,--8
+    ca.potencialmark,--9
+    ca.prepotencialmark,--10
+    ca.writeoffmark,--11
+    ca.debtageinicial AS dias_mora,
+CASE WHEN ca.prepotencialmark = 'Y' THEN
+    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
+        WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
+        WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' 
+    END
+        WHEN ca.potencialmark = 'Y' THEN
+    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
+        WHEN ca.crmorigen = 'RR' THEN 'churn'
+        WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
+        WHEN ca.potencialmark = 'N' AND ca.prepotencialmark = 'N' AND ca.writeoffmark = 'N' AND ca.debtageinicial = '0' THEN
+        CASE WHEN ca.valorscoring >= '60' THEN 'pp'
+             WHEN ca.valorscoring <'60' THEN 'flp'
+             WHEN ca.valorscoring IS NULL THEN 'flp' 
+        END
+        WHEN ca.potencialmark = 'Y' THEN 'Potencial'
+        WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
+        WHEN ca.debtageinicial = '30' THEN '30'
+        WHEN ca.debtageinicial = '60' THEN '60'
+        WHEN ca.debtageinicial = '90' THEN '90'
+        WHEN ca.debtageinicial = '120' THEN '120'
+        WHEN ca.debtageinicial = '150' THEN '150'
+        WHEN ca.debtageinicial = '180' THEN '180'
+        WHEN ca.debtageinicial = '210' THEN '210' 
+END AS segmento_bpo,--12  
+    ca.valorscoring,--13
+    ca.numeroreferenciadepago,--14
+    '$ ' || round(ca.montoinicial::NUMERIC) AS monto_inicial,--15
+    '$ ' || round(ca.modinitcta::NUMERIC) AS monto_ini_cuenta,--16
+    CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN '% 0' ELSE '% ' || d.descuento END AS porcentaje_descuento,--17
+    '$ ' ||CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN 0 ELSE ROUND(((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100)) END AS valor_descuento,--18
+    '$ ' ||CASE WHEN ed.obligacion_id IS NULL THEN CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END ELSE ROUND(ca.modinitcta::NUMERIC ) END AS valor_a_pagar, 
+    '$ ' ||round(ca.deudarealcuenta::NUMERIC) AS deuda_real,--20 
+    '$ ' ||p.valor_pago AS valor_pago,--21
+    '$ ' ||CASE WHEN CASE 
+		   				WHEN p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN ((CASE WHEN ed.obligacion_id IS NULL THEN CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END ELSE ROUND(ca.modinitcta::NUMERIC ) END) - p.valor_pago)
+		       			WHEN p.valor_pago IS NULL THEN CASE WHEN ed.obligacion_id IS NULL THEN CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END ELSE ROUND(ca.modinitcta::NUMERIC ) END
+			         END < 0 THEN 0 ELSE 
+			         CASE 
+						WHEN p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN ((CASE WHEN ed.obligacion_id IS NULL THEN CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END ELSE ROUND(ca.modinitcta::NUMERIC ) END) - p.valor_pago)
+						WHEN p.valor_pago IS NULL THEN CASE WHEN ed.obligacion_id IS NULL THEN CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END ELSE ROUND(ca.modinitcta::NUMERIC ) END
+				     END
+		   END AS saldo_pendiente, 
+    p.fecha_pago,--22
+    cp.fecha_compromiso,--23
+    cp.fecha_pago AS fecha_pago_compromiso,--24
+    '$ ' ||cp.valor AS valor_compromiso,--25
+    CASE 
+        WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
+        WHEN p.valor_pago < CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END THEN 'Pago parcial'               
+        WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
+        WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = cp.fecha_pago THEN 'Faltan 2 dias'
+        WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = cp.fecha_pago THEN 'Falta 1 dia'
+        WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date = cp.fecha_pago THEN 'Debe pagar hoy'
+        WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= cp.fecha_pago THEN 'Vigente'
+        WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN cp.fecha_pago + 1 AND cp.fecha_pago + 2  THEN 'Pendiente'
+        WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago >= CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END THEN 'Ya pago'
+        WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
+    END AS estado_acuerdo,--26  
+    mg.ind_m4,--27
+    mg.ind_m3,--28
+    mg.ind_m2,--29
+    mg.ind_m1,--30
+    mg.fecha_primer_gestion,--31
+    mg.fecha_ultima_gestion,--32
+	CASE WHEN p.valor_pago >= CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END THEN 'YA PAGO' ELSE mg.indicador END AS indicador,--33
+    mg.phone,--34
+    mg.asesor,--35
+    mg.fecha_gestion,--36
+    CASE WHEN mg.contactability IS NULL OR mg.contactability = 0 THEN 'No contacto' 
+        WHEN mg.contactability = 1 THEN 'Contacto'
+    END AS contactabilidad, --37
+    md.indicador AS indicador_hoy, --38
+    CASE WHEN mg.repeticion IS NULL THEN 0 ELSE mg.repeticion END ,--39
+    CASE WHEN mg.llamadas IS NULL THEN 0 ELSE mg.llamadas END ,--40
+    CASE WHEN mg.sms IS NULL THEN 0 ELSE mg.sms END ,--41
+    CASE WHEN mg.correos IS NULL THEN 0 ELSE mg.correos END ,--42
+    CASE WHEN mg.gescall IS NULL THEN 0 ELSE mg.gescall END ,--43
+    CASE WHEN mg.whatsapp IS NULL THEN 0 ELSE mg.whatsapp END ,--44
+    CASE WHEN mg.visitas IS NULL THEN 0 ELSE mg.visitas END ,--45
+    CASE WHEN mg.no_contacto IS NULL THEN 0 ELSE mg.no_contacto END,--46
+    sum(
+        CASE WHEN mg.llamadas IS NULL THEN 0 ELSE mg.llamadas END +
+        CASE WHEN mg.sms IS NULL THEN 0 ELSE mg.sms END +
+        CASE WHEN mg.correos IS NULL THEN 0 ELSE mg.correos END +
+        CASE WHEN mg.gescall IS NULL THEN 0 ELSE mg.gescall END +
+        CASE WHEN mg.whatsapp IS NULL THEN 0 ELSE mg.whatsapp END +
+        CASE WHEN mg.visitas IS NULL THEN 0 ELSE mg.visitas END +
+        CASE WHEN mg.no_contacto IS NULL THEN 0 ELSE mg.no_contacto END
+        ) AS total_gestiones,--47
+    round(tp.telefono) AS telefono_positivo,--48
+    tp.fec_ultima_marcacion--49
+FROM cbpo_claro.cons_asignacion AS ca
+    LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id 
+    LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
+    LEFT JOIN cbpo_claro.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
+    LEFT JOIN cbpo_claro.unicos AS u ON u.obligacion_id = ca.obligacion_id
+    LEFT JOIN cbpo_claro.descuentos AS d ON d.segmento = 
+CASE WHEN ca.prepotencialmark = 'Y' THEN
+    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
+        WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
+        WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' 
+    END
+        WHEN ca.potencialmark = 'Y' THEN
+    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
+        WHEN ca.crmorigen = 'RR' THEN 'churn'
+        WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
+        WHEN ca.potencialmark = 'N' AND ca.prepotencialmark = 'N' AND ca.writeoffmark = 'N' AND ca.debtageinicial = '0' THEN
+        CASE WHEN ca.valorscoring >= '60' THEN 'pp'
+             WHEN ca.valorscoring <'60' THEN 'flp'
+             WHEN ca.valorscoring IS NULL THEN 'flp' 
+        END
+        WHEN ca.potencialmark = 'Y' THEN 'Potencial'
+        WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
+        WHEN ca.debtageinicial = '30' THEN '30'
+        WHEN ca.debtageinicial = '60' THEN '60'
+        WHEN ca.debtageinicial = '90' THEN '90'
+        WHEN ca.debtageinicial = '120' THEN '120'
+        WHEN ca.debtageinicial = '150' THEN '150'
+        WHEN ca.debtageinicial = '180' THEN '180'
+        WHEN ca.debtageinicial = '210' THEN '210' 
+END          
+LEFT JOIN cbpo_claro.exclusiones_descuentos AS ed ON ed.obligacion_id = ca.obligacion_id
+LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
+LEFT JOIN pagos AS p ON p.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_claro.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id 
+WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_claro.cons_asignacion)
+GROUP BY md.indicador,mg.contactability,ca.fecha_registro,ca.deudor_id,ca.obligacion_id,ca.crmorigen,ca.potencialmark,  ca.prepotencialmark,ca.writeoffmark,ca.valorscoring,ca.numeroreferenciadepago,
+ca.estado,ca.nombredelcliente,ca.montoinicial,ca.modinitcta,ca.deudarealcuenta,p.valor_pago,p.fecha_pago,ca.debtageinicial,ed.obligacion_id,
+CASE WHEN ca.prepotencialmark = 'Y' THEN
+    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
+        WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
+        WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' 
+    END
+        WHEN ca.potencialmark = 'Y' THEN
+    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
+        WHEN ca.crmorigen = 'RR' THEN 'churn'
+        WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
+        WHEN ca.potencialmark = 'N' AND ca.prepotencialmark = 'N' AND ca.writeoffmark = 'N' AND ca.debtageinicial = '0' THEN
+        CASE WHEN ca.valorscoring >= '60' THEN 'pp'
+             WHEN ca.valorscoring <'60' THEN 'flp'
+             WHEN ca.valorscoring IS NULL THEN 'flp' 
+        END
+        WHEN ca.potencialmark = 'Y' THEN 'Potencial'
+        WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
+        WHEN ca.debtageinicial = '30' THEN '30'
+        WHEN ca.debtageinicial = '60' THEN '60'
+        WHEN ca.debtageinicial = '90' THEN '90'
+        WHEN ca.debtageinicial = '120' THEN '120'
+        WHEN ca.debtageinicial = '150' THEN '150'
+        WHEN ca.debtageinicial = '180' THEN '180'
+        WHEN ca.debtageinicial = '210' THEN '210' 
+END,
+t.tipo_cliente,u.unico,
+CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN '% 0' ELSE '% ' || d.descuento END,
+CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN 0 ELSE ROUND(((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100)) END,
+CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((ROUND(ca.modinitcta::NUMERIC ) - ((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100))) END,
+mg.indicador,mg.repeticion,mg.llamadas,mg.sms,mg.correos,mg.gescall,mg.whatsapp,mg.no_contacto,mg.fecha_gestion,mg.visitas,mg.phone, mg.asesor,mg.fecha_primer_gestion,mg.fecha_ultima_gestion,
+mg.ind_m1,mg.ind_m2,mg.ind_m3,mg.ind_m4,tp.telefono,tp.fec_ultima_marcacion,cp.fecha_compromiso,cp.fecha_pago,cp.valor;

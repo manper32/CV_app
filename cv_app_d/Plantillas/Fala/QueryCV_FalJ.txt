@@ -4,26 +4,26 @@ WITH base AS (SELECT DISTINCT o.deudor_id
 			  ON o.obligacion_id = oa.obligacion_id
 			  WHERE oa.asignacion_id = (SELECT a.asignacion_id 
 			  						    FROM cbpo_falabella.asignaciones AS a 
-			  						    WHERE a.estado IS TRUE)),
-consa AS (SELECT m.* 
+			  						    WHERE a.estado IS TRUE AND unidad_id = 1)),
+consa AS (SELECT DISTINCT m.* 
 		  FROM cbpo_falabella.mejor_gestion AS m 
 		  LEFT JOIN base AS b 
 		  ON b.deudor_id = m.deudor_id 
 		  WHERE mes = EXTRACT (MONTH FROM current_date )),
-consb AS (SELECT m.deudor_id,indicador 
+consb AS (SELECT DISTINCT m.deudor_id,indicador 
 	      FROM cbpo_falabella.mejor_gestion AS m 
 	      LEFT JOIN base AS b 
 	      ON b.deudor_id = m.deudor_id 
 	      WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
-consc AS (SELECT m.deudor_id,indicador 
+consc AS (SELECT DISTINCT m.deudor_id,indicador 
           FROM cbpo_falabella.mejor_gestion AS m 
           LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
           WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
-consd AS (SELECT m.deudor_id,indicador 
+consd AS (SELECT DISTINCT m.deudor_id,indicador 
 		  FROM cbpo_falabella.mejor_gestion AS m 
 		  LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
 		  WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
-conse AS (SELECT m.deudor_id,indicador 
+conse AS (SELECT DISTINCT m.deudor_id,indicador 
 	      FROM cbpo_falabella.mejor_gestion AS m 
 	      LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
 	      WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
@@ -72,29 +72,33 @@ basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY obligacion_id
 						fecha_pago,asesor 
 					FROM cbpo_falabella.compromisos 
 					WHERE obligacion_id != ''
-					AND fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado =  TRUE)),
+					AND fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado IS TRUE AND unidad_id = 1)),
 compromisos AS (SELECT * 
 				FROM basecompromisos 
 				WHERE contador = 1),
 pagos AS (SELECT obligacion_id,sum(pago_valor) AS valor_pago ,max(pago_fecha) AS fecha_pago 
 		  FROM cbpo_falabella.pagos
-		  WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado =  TRUE)
+		  WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado IS TRUE AND unidad_id = 1)
 		  GROUP BY obligacion_id),
-sumasaldot AS (SELECT deudor_id,SUM(ROUND(REPLACE(saldo_total,',','.')::NUMERIC)) AS saldopareto 
+sumasaldot AS (SELECT DISTINCT deudor_id,SUM(ROUND(REPLACE(saldo_total,',','.')::NUMERIC)) AS saldopareto 
 			   FROM cbpo_falabella.cons_asignacion 
 			   WHERE fecha_registro = (SELECT max(fecha_registro) 
-			   						   FROM cbpo_falabella.cons_asignacion) 
-			   						   GROUP BY deudor_id),
+			   						   FROM cbpo_falabella.cons_asignacion
+			   						   WHERE unidad_nombre = 'Prejuridico')
+			   AND unidad_nombre = 'Prejuridico'						   
+			   GROUP BY deudor_id),
 sumaparetocart AS (SELECT grupo,rango,SUM(ROUND(REPLACE(saldo_total,',','.')::NUMERIC)) AS sumaparetocartera 
 			       FROM cbpo_falabella.cons_asignacion 
 			       WHERE fecha_registro = (SELECT max(fecha_registro) 
-			                               FROM cbpo_falabella.cons_asignacion) 
-			                               GROUP BY grupo,rango),
+			                               FROM cbpo_falabella.cons_asignacion
+			                               WHERE unidad_nombre = 'Prejuridico')
+			       AND unidad_nombre = 'Prejuridico'
+			       GROUP BY grupo,rango),
 unicopro AS (SELECT DISTINCT deudor_id,obligacion_id,
-			CASE WHEN grupo::NUMERIC = 3 THEN 'Consumo'
+			 CASE WHEN grupo::NUMERIC = 3 THEN 'Consumo'
 			     WHEN grupo::NUMERIC = 5 THEN 'Tarjeta'
 			     WHEN grupo::NUMERIC = 6 THEN 'Sobregiro'
-			END || ' '|| upper(RIGHT(rango,length(rango)-(strpos(rango,')') +1))) AS cartera,
+			 END || ' '|| upper(RIGHT(rango,length(rango)-(strpos(rango,')') +1))) AS cartera,
 		     ROW_NUMBER () OVER (PARTITION BY deudor_id,CASE WHEN grupo::NUMERIC = 3 THEN 'Consumo'
 																					     WHEN grupo::NUMERIC = 5 THEN 'Tarjeta'
 																					     WHEN grupo::NUMERIC = 6 THEN 'Sobregiro'
@@ -104,7 +108,9 @@ unicopro AS (SELECT DISTINCT deudor_id,obligacion_id,
 																								     WHEN grupo::NUMERIC = 6 THEN 'Sobregiro'
 																								END || ' '|| upper(RIGHT(rango,length(rango)-(strpos(rango,')') +1)))) AS cont_up 
 			 FROM cbpo_falabella.cons_asignacion WHERE fecha_registro = (SELECT max(fecha_registro) 
-			 															 FROM cbpo_falabella.cons_asignacion)					 
+			 															 FROM cbpo_falabella.cons_asignacion
+			 															 WHERE unidad_nombre = 'Prejuridico')
+			 									 AND unidad_nombre = 'Prejuridico'						 
 			 															 ORDER BY deudor_id),
 maxfectreest AS (SELECT DISTINCT 
 				      cuenta,
@@ -130,12 +136,14 @@ sumacuotas AS (SELECT DISTINCT
 	       THEN 0 ELSE ROUND(REPLACE(cuota_vcda12,',','.')::NUMERIC) 
 	  END AS totalcuotas
 	FROM cbpo_falabella.cons_asignacion
-	WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado IS TRUE)
-	AND fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_asignacion)
+	WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado IS TRUE AND unidad_id = 1)
+	AND fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_asignacion WHERE unidad_nombre = 'Prejuridico')
 	AND unidad_nombre = 'Prejuridico'
 	GROUP BY obligacion_id,fecha_registro,vencto,cuota_vcda1,cuota_vcda2,cuota_vcda3,cuota_vcda4,cuota_vcda5,cuota_vcda6,
 cuota_vcda7,cuota_vcda8,cuota_vcda9,cuota_vcda10,cuota_vcda11,cuota_vcda12,fecha_venc12
-ORDER BY obligacion_id,vencto)---- aqui			 
+ORDER BY obligacion_id,vencto),
+listarobinson AS (SELECT DISTINCT deudor_id FROM cbpo_falabella.lista_robinson),
+ajustes AS (SELECT deudor_id ,obligacion_id, max(fecha_aplicacion) AS fecha_aplicacion FROM cbpo_falabella.ajustes GROUP BY deudor_id ,obligacion_id)
 SELECT DISTINCT 
 ca.tipo_producto_asignacion,
 ca.grupo,
@@ -161,7 +169,7 @@ ca.dias_mora_asignacion::NUMERIC + (current_date - (SELECT DISTINCT min(fecha_re
 													FROM cbpo_falabella.cons_asignacion 
 													WHERE asignacion_id = (SELECT asignacion_id 
 																		   FROM cbpo_falabella.asignaciones 
-																		   WHERE estado IS TRUE ))) AS alturamora_hoy,
+																		   WHERE estado IS TRUE AND unidad_id = 1))) AS alturamora_hoy,
 '(0'||substring(ca.rango,2,2)::NUMERIC - 1||')'||' '||RIGHT(ca.rango,length(ca.rango)-(strpos(ca.rango,')') +1)) AS rango,																		   
 ROUND(ca.dias_mora_asignacion::NUMERIC)  AS dias_mora,
 ca.vencto,
@@ -169,20 +177,20 @@ CASE WHEN mg.indicador IS NULL THEN 'SIN GESTION' ELSE mg.indicador END AS mejor
 mg.total_gestiones::TEXT ,
 mg.fecha_ultima_gestion,
 mg.asesor AS asesor_mejor_gestion,
-cp.fecha_compromiso,
-cp.fecha_pago AS fecha_pago_compromiso,
+CASE WHEN cp.fecha_compromiso = '1900-01-01' THEN NULL ELSE cp.fecha_compromiso END  AS fecha_compromiso,
+CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END AS fecha_pago_compromiso,
 '$ ' ||cp.valor AS valor_compromiso,
 CASE 
-	WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
-	WHEN cp.fecha_pago IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
-	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = cp.fecha_pago THEN 'Falta 2 dias'
-	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = cp.fecha_pago THEN 'Falta 1 dia'
-	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date = cp.fecha_pago THEN 'Debe pagar hoy'
-	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= cp.fecha_pago THEN 'Vigente'
-	WHEN cp.fecha_pago IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN cp.fecha_pago + 1 AND cp.fecha_pago + 2  THEN 'Pendiente'
-	WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago >= sc.totalcuotas THEN 'Cumplido'
-	WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago < sc.totalcuotas THEN 'Pago parcial'
-	WHEN cp.fecha_pago IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 2 dias'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 1 dia'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Debe pagar hoy'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Vigente'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 1 AND CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 2  THEN 'Pendiente'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago >= sc.totalcuotas THEN 'Cumplido'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago < sc.totalcuotas THEN 'Pago parcial'
+	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
 END AS estado_acuerdo,
 pa.dias_mora::NUMERIC AS dias_mora_pagos,
 '$ ' || p.valor_pago AS valor_pago,
@@ -471,42 +479,26 @@ CASE WHEN l.deudor_id IS NULL THEN 'No'
 ELSE 'Si' 
 END AS lista_robinson
 FROM cbpo_falabella.cons_asignacion AS ca 
-LEFT JOIN cbpo_falabella.lista_robinson AS l 
-	ON l.deudor_id = ca.deudor_id
-LEFT JOIN cbpo_falabella.unicos AS u 
-	ON u.obligacion_id = ca.obligacion_id
-LEFT JOIN cbpo_falabella.tipo_cliente AS t 
-	ON t.deudor_id = ca.deudor_id
-INNER JOIN sumasaldot AS s 
-	ON s.deudor_id = ca.deudor_id 
-INNER JOIN sumaparetocart AS sp 
-	ON sp.grupo = ca.grupo 
-	AND sp.rango = ca.rango
-LEFT JOIN pagos AS p 
-	ON p.obligacion_id = ca.obligacion_id
-LEFT JOIN cbpo_falabella.pagos AS pa 
-	ON pa.obligacion_id = p.obligacion_id 
-	AND pa.pago_fecha = p.fecha_pago
-INNER JOIN unicopro AS up 
-	ON up.obligacion_id = ca.obligacion_id 
-LEFT JOIN cbpo_falabella.ajustes AS aj 
-	ON aj.obligacion_id = ca.obligacion_id
-LEFT JOIN maxfectreest AS r ON r.cuenta = ca.obligacion_id
-LEFT JOIN cbpo_falabella.reestructuraciones AS res 
-	ON res.cuenta = r.cuenta 
-	AND res.periodo = r.maxrest
-LEFT JOIN cbpo_falabella.reestructuraciones AS ras 
-	ON ras.cuenta = r.cuenta 
-	AND ras.periodo = r.maxrest - 5
-INNER JOIN sumacuotas AS sc ON sc.obligacion_id = ca.obligacion_id
-LEFT JOIN cbpo_falabella.gastos_cobranza AS gc ON ca.dias_mora_asignacion::NUMERIC >= gc.mora_ini 
-	AND ca.dias_mora_asignacion::NUMERIC <= gc.mora_fin
-LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_falabella.tipo_cliente AS t ON t.deudor_id = ca.deudor_id 
+LEFT JOIN cbpo_falabella.unicos AS u  ON u.obligacion_id = ca.obligacion_id AND u.unidad_id = 1
+LEFT JOIN unicopro AS up ON up.obligacion_id = ca.obligacion_id
+LEFT JOIN sumasaldot AS s ON s.deudor_id = ca.deudor_id
+LEFT JOIN sumaparetocart AS sp ON sp.grupo = ca.grupo AND sp.rango = ca.rango
 LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
+LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id
+LEFT JOIN pagos AS p ON p.obligacion_id = ca.obligacion_id
+LEFT JOIN sumacuotas AS sc ON sc.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_falabella.pagos AS pa ON pa.obligacion_id = p.obligacion_id AND pa.pago_fecha = p.fecha_pago
+LEFT JOIN cbpo_falabella.gastos_cobranza AS gc ON ca.dias_mora_asignacion::NUMERIC >= gc.mora_ini AND ca.dias_mora_asignacion::NUMERIC <= gc.mora_fin
+LEFT JOIN listarobinson AS l ON l.deudor_id = ca.deudor_id
+LEFT JOIN ajustes AS aj ON aj.obligacion_id = ca.obligacion_id
+LEFT JOIN maxfectreest AS r ON r.cuenta = ca.obligacion_id
+LEFT JOIN cbpo_falabella.reestructuraciones AS res ON res.cuenta = r.cuenta AND res.periodo = r.maxrest
+LEFT JOIN cbpo_falabella.reestructuraciones AS ras ON ras.cuenta = r.cuenta AND ras.periodo = r.maxrest - 5
 LEFT JOIN cbpo_falabella.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
 LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
-WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_asignacion)
-AND ca.asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado = TRUE )
+WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_asignacion WHERE unidad_nombre = 'Prejuridico')
+AND ca.asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado IS TRUE  AND unidad_id = 1)
 AND ca.unidad_nombre = 'Prejuridico'
-ORDER BY ca.deudor_id;	
-
+AND u.unidad_id = 1
+ORDER BY ca.deudor_id;
