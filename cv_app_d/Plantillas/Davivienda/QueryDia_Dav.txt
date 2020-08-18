@@ -1,0 +1,2 @@
+select *
+from cbpo_davivienda.mejor_gestion_dia;

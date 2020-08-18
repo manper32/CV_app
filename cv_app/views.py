@@ -709,3 +709,33 @@ def csv_CV_FalaC(request):
         fn = fn[lt]
 
     return csv_o(fn,tablename)
+
+def csv_GesD_Davi(request):
+    today = datetime.now()
+    tablename = "Ges_Davi"+today.strftime("%Y%m%d%H")+'.csv'
+
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Davivienda/QueryDia_Dav.txt","r") as f1:
+        queryP_PT = f1.read()
+        
+    anwr = psql_pdc(queryP_PT)
+    fn = pd.DataFrame(anwr)
+
+    #renombrar campos CV
+    fn = fn.rename(columns={0:'deudor_id',
+                            1:'dia',
+                            2:'indicador',
+                            3:'repeticion',
+                            4:'llamadas',
+                            5:'sms',
+                            6:'correos',
+                            7:'gescall',
+                            8:'whatsapp',
+                            9:'no_contacto',
+                            10:'fecha_gestion',
+                            11:'visitas',
+                            12:'phone',
+                            13:'asesor',
+                            14:'descod01',
+                            15:'descod02'})
+    
+    return csv_o(fn,tablename)
