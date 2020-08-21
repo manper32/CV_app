@@ -710,11 +710,111 @@ def csv_CV_FalaC(request):
 
     return csv_o(fn,tablename)
 
+def csv_CV_Sant(request):
+    today = datetime.now()
+    tablename = "CV_San"+today.strftime("%Y%m%d%H")+'.csv'
+
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Sant/QueryTel_San.txt","r") as f1:
+        queryP_PT = f1.read()
+        
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Sant/QueryCor_San.txt","r") as f2:
+        queryP_PC = f2.read()
+            
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Sant/QueryDir_San.txt","r") as f3:
+        queryP_PD = f3.read()
+            
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Sant/QueryCV_San.txt","r") as f4:
+        queryP_cons = f4.read()
+        
+    anwr = psql_pdc(queryP_PT)
+    anwrC = psql_pdc(queryP_PC)
+    anwrD = psql_pdc(queryP_PD)
+    yanwr = psql_pdc(queryP_cons)
+
+    anwr_P = pd.DataFrame(anwr)
+    anwr_C = pd.DataFrame(anwrC)
+    anwr_D = pd.DataFrame(anwrD)
+    df = pd.DataFrame(yanwr)
+
+    inf = to_horiz(anwr_P,'phone',"deudor_id")
+    infC = to_horiz(anwr_C,'mail',"deudor_id")
+    infD = to_horiz(anwr_D,'address',"deudor_id")
+
+    #renombrar campos CV
+    df = df.rename(columns={0:'entidad',
+                            1:'abogado',
+                            2:'fecha_desembolso',
+                            3:'fecha_corte',
+                            4:'solicitud',
+                            5:'obligacion_id',
+                            6:'deudor_id',
+                            7:'unico',
+                            8:'nombre',
+                            9:'capital',
+                            10:'dias_mora',
+                            11:'rango_mora',
+                            12:'saldo_capital_pareto',
+                            13:'rango_pareto',
+                            14:'tomo_encuesta',
+                            15:'aplica_alivio',
+                            16:'fecha_proximo_pago_alivio',
+                            17:'debitos',
+                            18:'rango_cierre_m4',
+                            19:'rango_cierre_m3',
+                            20:'rango_cierre_m2',
+                            21:'rango_cierre_m1',
+                            22:'repeticion',
+                            23:'llamadas',
+                            24:'sms',
+                            25:'correos',
+                            26:'gescall',
+                            27:'whatsapp',
+                            28:'visitas',
+                            29:'no_contacto',
+                            30:'total_gestiones',
+                            31:'fecha_primer_gestion',
+                            32:'fecha_ultima_gestion',
+                            33:'ultimo_alo',
+                            34:'ind_m4',
+                            35:'ind_m3',
+                            36:'ind_m2',
+                            37:'ind_m1',
+                            38:'ind_mes_actual',
+                            39:'fec_ind_mes_actual',
+                            40:'tel_ind_mes_actual',
+                            41:'asesor_ind_mes_actual',
+                            42:'contactabilidad',
+                            43:'asesor_ind_hoy',
+                            44:'ind_hoy',
+                            45:'ultima_marcacion_tel_pos',
+                            46:'telefono_positivo',
+                            47:'fecha_compromiso',
+                            48:'fecha_pago_compromiso',
+                            49:'valor_compromiso',
+                            50:'calificacion',
+                            51:'fechas_probables_pago',
+                            52:'id_protocolo',
+                            53:'canal_protocolo',
+                            54:'texto_protocolo'})
+            
+    fn = pd.merge(df,inf,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
+    fn = pd.merge(fn,infC,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
+    fn = pd.merge(fn,infD,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
+
+    lt = fn.columns.tolist()
+    lt = lt[:51] + lt[-(inf.shape[1] + infC.shape[1] + infD.shape[1] -3):] + lt[52:55]
+    fn = fn[lt]
+    
+    return csv_o(fn,tablename)
+
 def csv_GesD_Davi(request):
     today = datetime.now()
     tablename = "Ges_Davi"+today.strftime("%Y%m%d%H")+'.csv'
 
-    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Davivienda/QueryDia_Dav.txt","r") as f1:
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Davi/QueryDia_Dav.txt","r") as f1:
         queryP_PT = f1.read()
         
     anwr = psql_pdc(queryP_PT)

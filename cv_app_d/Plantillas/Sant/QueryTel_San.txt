@@ -1,0 +1,13 @@
+select distinct trim(deudor_id)
+				,row_number ()
+	 			OVER (PARTITION  BY	trim(deudor_id)
+				ORDER BY	trim(deudor_id) desc,
+							concat(indicativo,telefono) desc) AS ROWNUMBER
+				,concat(indicativo::varchar,telefono::varchar) --select* 
+from cbpo_santander.telefonos
+where telefono_estado is true
+and concat(indicativo::varchar,telefono::varchar) != '0'
+order by trim(deudor_id)desc,row_number ()
+	 			OVER (PARTITION  BY	trim(deudor_id)
+				ORDER BY	trim(deudor_id) desc,
+							concat(indicativo,telefono) desc);

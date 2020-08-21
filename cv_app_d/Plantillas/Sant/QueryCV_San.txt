@@ -1,0 +1,173 @@
+WITH base AS (SELECT DISTINCT o.deudor_id 
+			  FROM cbpo_santander.obligaciones_asignacion AS oa 
+			  INNER JOIN cbpo_santander.obligaciones AS o 
+			  ON o.obligacion_id = oa.obligacion_id
+			  WHERE oa.asignacion_id = (SELECT a.asignacion_id 
+			  						    FROM cbpo_santander.asignaciones AS a 
+			  						    WHERE a.estado IS TRUE)),
+consa AS (SELECT DISTINCT m.* 
+		  FROM cbpo_santander.mejor_gestion AS m 
+		  LEFT JOIN base AS b 
+		  ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date )),
+consb AS (SELECT DISTINCT m.deudor_id,indicador 
+	      FROM cbpo_santander.mejor_gestion AS m 
+	      LEFT JOIN base AS b 
+	      ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
+consc AS (SELECT DISTINCT m.deudor_id,indicador 
+          FROM cbpo_santander.mejor_gestion AS m 
+          LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+          WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
+consd AS (SELECT DISTINCT m.deudor_id,indicador 
+		  FROM cbpo_santander.mejor_gestion AS m 
+		  LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
+conse AS (SELECT DISTINCT m.deudor_id,indicador 
+	      FROM cbpo_santander.mejor_gestion AS m 
+	      LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
+basemejorgestion AS (SELECT DISTINCT bs.deudor_id,
+							a.mes, a.anio, a.indicador, a.repeticion, a.llamadas, a.sms, a.correos,a.gescall, a.whatsapp, a.no_contacto,
+					  		CASE WHEN a.llamadas IS NULL THEN 0 ELSE a.llamadas END +
+					  		CASE WHEN a.sms IS NULL THEN 0 ELSE a.sms END +
+					  		CASE WHEN a.correos IS NULL THEN 0 ELSE a.correos END +
+					  		CASE WHEN a.gescall IS NULL THEN  0 ELSE a.gescall END +
+					  		CASE WHEN a.whatsapp IS NULL THEN 0 ELSE a.whatsapp END +
+					  		CASE WHEN a.no_contacto IS NULL THEN  0 ELSE a.no_contacto END AS total_gestiones, 
+					  		a.fecha_gestion, a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, 
+					  a.ultimo_alo,b.indicador AS ind_m1,c.indicador AS ind_m2,d.indicador AS ind_m3,e.indicador AS ind_m4,i.contactability 
+					  FROM base AS bs
+					  LEFT JOIN consa	AS a ON a.deudor_id = bs.deudor_id					
+					  LEFT JOIN consb AS b ON b.deudor_id = bs.deudor_id
+					  LEFT JOIN consc AS c ON c.deudor_id = bs.deudor_id
+					  LEFT JOIN consd AS d ON d.deudor_id = bs.deudor_id
+					  LEFT JOIN conse AS e ON e.deudor_id = bs.deudor_id
+					  LEFT JOIN bi_snap.management_indicators AS i ON i.indicator_desc = trim(a.indicador)
+					  GROUP BY bs.deudor_id,a.mes,a.anio,a.indicador,a.repeticion,a.llamadas,a.sms,a.correos,a.gescall,a.whatsapp,a.no_contacto,a.fecha_gestion,
+							a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion,a.ultimo_alo,b.indicador,c.indicador,d.indicador,e.indicador,i.contactability),
+basetelpos AS (SELECT ROW_NUMBER () OVER (PARTITION BY tpf.deudor_id ORDER BY tpf.fec_ultima_marcacion DESC , tpf.marcaciones DESC ,tpf.deudor_id DESC ,tpf.telefono DESC) AS contador,
+			   tpf.deudor_id,tpf.fec_ultima_marcacion,tpf.telefono,tpf.marcaciones 
+			   FROM cbpo_santander.telefonos_positivos AS tpf 
+			   WHERE deudor_id != '' 
+			   ORDER BY tpf.deudor_id,contador),
+telefonospositivos AS (SELECT deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),			   
+basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY regexp_replace(obligacion_id, '[^0-9]', '', 'g') ORDER BY fecha_compromiso DESC , fecha_pago DESC ,valor DESC ,asesor DESC) AS contador,	
+						regexp_replace(obligacion_id, '[^0-9]', '', 'g') AS obligacion_id,valor,fecha_compromiso,fecha_pago,asesor 
+					FROM cbpo_santander.compromisos 
+					WHERE obligacion_id != ''
+					AND fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_santander.asignaciones WHERE estado IS TRUE)),
+compromisos AS (SELECT * FROM basecompromisos WHERE contador = 1),			   				  		
+rangomes4 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas WHERE EXTRACT(MONTH FROM mes::date) = EXTRACT (MONTH FROM current_date) - 4 ),
+rangomes3 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas WHERE EXTRACT(MONTH FROM mes::date) = EXTRACT (MONTH FROM current_date) - 3 ),
+rangomes2 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas WHERE EXTRACT(MONTH FROM mes::date) = EXTRACT (MONTH FROM current_date) - 2 ),
+rangomes1 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas WHERE EXTRACT(MONTH FROM mes::date) = EXTRACT (MONTH FROM current_date) - 1 ),
+saldototalentidad AS (SELECT DISTINCT unidad,deudor_id,sum(regexp_replace(capital, '[^0-9]', '', 'g')::NUMERIC)AS saldoparetoent FROM cbpo_santander.cons_asignacion WHERE fecha_registro = (SELECT DISTINCT max(fecha_registro ) FROM cbpo_santander.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_santander.asignaciones WHERE estado IS TRUE )) GROUP BY deudor_id,unidad),
+unicos AS (SELECT CASE WHEN ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY c.deudor_id, c.unidad) > 1 THEN 0 ELSE  ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY deudor_id, unidad) END AS orden, c.deudor_id ,c.unidad ,c.obligacion_id 
+FROM cbpo_santander.cons_asignacion AS c 
+WHERE asignacion_id = (SELECT DISTINCT a.asignacion_id FROM cbpo_santander.asignaciones AS a WHERE estado = TRUE)) 
+SELECT DISTINCT 
+	ca.unidad AS entidad,
+	ca.abogado,
+	ca.fecha_desembolso,
+	ca.fecha_corte::int4,
+	ca.solicitud,
+	ca.obligacion_id,
+	ca.deudor_id,
+	u.orden AS unico, 
+	ca.nombre,
+	'$ '||regexp_replace(ca.capital, '[^0-9]', '', 'g')::NUMERIC AS capital ,
+	a.dias_mora_corte AS dias_mora,
+	CASE WHEN regexp_replace(ca.capital, '[^0-9]', '', 'g')::NUMERIC = 0 THEN 'Cancelado'
+	     WHEN a.dias_mora_corte = 0 THEN 'Al dia'
+         WHEN a.dias_mora_corte > 90 THEN '>90'
+         WHEN a.dias_mora_corte < 31 THEN '1-30 dias'
+         WHEN a.dias_mora_corte < 61 THEN '31-60 dia'
+         WHEN a.dias_mora_corte > 31 AND a.dias_mora_corte <= 90 THEN '61-90 dias'
+    END AS rango_mora, 	     
+	'$ '||se.saldoparetoent AS saldo_capital_pareto,
+	CASE 
+		 WHEN ca.unidad = 'Santander' AND se.saldoparetoent >= 100000000 THEN '1. MAYOR A 100 MM'
+	     WHEN ca.unidad = 'Santander' AND se.saldoparetoent >=  80000000 AND  se.saldoparetoent <  100000000 THEN '2. 80 MM A 99 MM'
+	     WHEN ca.unidad = 'Santander' AND se.saldoparetoent >=  60000000 AND  se.saldoparetoent <  80000000 THEN '3. 60 MM A 80 MM'
+	     WHEN ca.unidad = 'Santander' AND se.saldoparetoent >=  40000000 AND  se.saldoparetoent <  60000000 THEN '4. 40 MM A 60 MM'
+	     WHEN ca.unidad = 'Santander' AND se.saldoparetoent >=  30000000 AND  se.saldoparetoent <  40000000 THEN '5. 30 MM A 40 MM'
+	     WHEN ca.unidad = 'Santander' AND se.saldoparetoent >=  20000000 AND  se.saldoparetoent <  30000000 THEN '6. 20 MM A 30 MM'
+	     WHEN ca.unidad = 'Santander' AND se.saldoparetoent <   20000000 THEN '7. MENOR A 20 MM'
+	     WHEN ca.unidad = 'Juriscoop' AND se.saldoparetoent >=  60000000 THEN '1. MAYOR A 60 MM'
+	     WHEN ca.unidad = 'Juriscoop' AND se.saldoparetoent >=  40000000 AND  se.saldoparetoent <  60000000 THEN '2. 40 MM A 60 MM'
+	     WHEN ca.unidad = 'Juriscoop' AND se.saldoparetoent >=  30000000 AND  se.saldoparetoent <  40000000 THEN '3. 30 MM A 40 MM'
+	     WHEN ca.unidad = 'Juriscoop' AND se.saldoparetoent >=  15000000 AND  se.saldoparetoent <  30000000 THEN '4. 15 MM A 30 MM'
+	     WHEN ca.unidad = 'Juriscoop' AND se.saldoparetoent <   20000000 THEN '5. MENOR A 20 MM'
+	END AS rango_pareto,
+	al.tomo_encuesta,
+	al.aplica_alivio,
+	v.fecha_vento AS fecha_proximo_pago_alivio,
+	d.prenota AS debitos,
+	r4.rango_mora_final AS rango_cierre_m4,
+	r3.rango_mora_final AS rango_cierre_m3,
+	r2.rango_mora_final AS rango_cierre_m2,
+	r1.rango_mora_final AS rango_cierre_m1,
+	mg.repeticion::TEXT,
+	mg.llamadas::TEXT, 
+	mg.sms::TEXT,
+	mg.correos::TEXT , 
+	mg.gescall::TEXT ,
+	mg.whatsapp::TEXT , 
+	mg.visitas::TEXT ,
+	mg.no_contacto::TEXT,
+	mg.total_gestiones::TEXT , 
+	mg.fecha_primer_gestion,
+	mg.fecha_ultima_gestion, 
+    mg.ultimo_alo,
+    mg.ind_m4,
+    mg.ind_m3,
+    mg.ind_m2,
+    mg.ind_m1,
+   CASE WHEN a.dias_mora_corte = 0 THEN 'AL DIA' ELSE mg.indicador END AS ind_mes_actual,
+	mg.fecha_gestion AS fec_ind_mes_actual,
+	mg.phone::TEXT AS tel_ind_mes_actual,
+	mg.asesor AS asesor_ind_mes_actual,    
+    CASE WHEN mg.contactability = 0 OR mg.contactability IS NULL THEN 'No contactado' ELSE 'Contactado' END AS contactabilidad,
+    md.asesor AS asesor_ind_hoy, 
+    md.indicador AS ind_hoy,
+    tp.fec_ultima_marcacion AS ultima_marcacion_tel_pos,
+    tp.telefono::TEXT AS telefono_positivo,
+    CASE WHEN cp.fecha_compromiso = '1900-01-01' THEN NULL ELSE cp.fecha_compromiso END  AS fecha_compromiso,
+	CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END AS fecha_pago_compromiso,
+	'$ ' ||cp.valor AS valor_compromiso,
+	c.rango_rsk AS calificacion,
+	dp.dia_pago AS fechas_probables_pago,
+	CASE WHEN pc.canal IS NULL THEN NULL ELSE CASE WHEN a.dias_mora_corte > 0 THEN 'T'||a.dias_mora_corte 
+  	     WHEN a.dias_mora_corte <= 0 AND (a.dias_mora_corte - EXTRACT(DAY FROM CURRENT_DATE)) = -3  THEN 'T'||'-3'
+    END END AS id_protocolo,
+	pc.canal AS canal_protocolo,
+	REPLACE(REPLACE(pc.texto_protocolo,'(mes)',to_char(current_date, 'TMMonth')),'dd-mm-aaaa',ca.fecha_corte||'/'||EXTRACT (MONTH FROM current_date)||'/'||EXTRACT (YEAR FROM current_date)) AS texto_protocolo
+FROM cbpo_santander.cons_asignacion AS ca
+INNER JOIN unicos AS u ON u.obligacion_id = ca.obligacion_id 
+LEFT JOIN saldototalentidad AS se ON se.deudor_id = ca.deudor_id AND se.unidad = ca.unidad
+LEFT JOIN cbpo_santander.actualizacion AS a ON a.operacion = ca.obligacion_id
+LEFT JOIN cbpo_santander.alivios AS al ON al.credito = ca.obligacion_id
+LEFT JOIN cbpo_santander.vento_alivios AS v ON v.obligacion_id = ca.obligacion_id 
+LEFT JOIN cbpo_santander.debitos AS d ON d.credito = ca.obligacion_id
+LEFT JOIN rangomes4 AS r4 ON r4.credito = ca.obligacion_id
+LEFT JOIN rangomes3 AS r3 ON r3.credito = ca.obligacion_id
+LEFT JOIN rangomes2 AS r2 ON r2.credito = ca.obligacion_id
+LEFT JOIN rangomes1 AS r1 ON r1.credito = ca.obligacion_id
+LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
+LEFT JOIN cbpo_santander.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
+LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
+LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_santander.calificacion AS c ON c.cedula = ca.deudor_id 
+LEFT JOIN cbpo_santander.dia_probable_pago AS dp ON dp.deudor_id = ca.deudor_id
+LEFT JOIN cbpo_santander.protocolo_comunicacion AS pc ON pc.id_protocolo = 
+	CASE WHEN a.dias_mora_corte > 0 THEN 'T'||a.dias_mora_corte 
+		 WHEN a.dias_mora_corte <= 0 AND (a.dias_mora_corte - EXTRACT(DAY FROM CURRENT_DATE)) = -3 AND d.prenota = 'APROBADA' THEN 'T'||'-3'||'D'
+		 WHEN a.dias_mora_corte <= 0 AND (a.dias_mora_corte - EXTRACT(DAY FROM CURRENT_DATE)) = -3 AND d.prenota != 'APROBADA' THEN 'T'||'-3'
+	END 
+	AND pc.entidad = ca.unidad 
+WHERE ca.fecha_registro = (SELECT DISTINCT max(fecha_registro ) 
+						   FROM cbpo_santander.cons_asignacion 
+						   WHERE asignacion_id = (SELECT asignacion_id 
+						  						  FROM cbpo_santander.asignaciones 
+						  						  WHERE estado IS TRUE ));
