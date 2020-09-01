@@ -1,11 +1,85 @@
-select distinct trim(deudor_id) 
+select distinct trim(t1.deudor_id) deudor_id
 				,row_number ()
-	 			OVER (PARTITION  BY	trim(deudor_id)
-				ORDER BY	trim(deudor_id) desc,
-				telefono desc) AS ROWNUMBER
-				,concat(cast(indicativo as varchar),cast(telefono as varchar))
+	 			OVER (PARTITION  BY	trim(t1.deudor_id)
+				ORDER BY	trim(t1.deudor_id) desc,
+							case when t7.porcentaje is null then 0 end desc,
+							case when t7.llamadas is null then 0 else t7.llamadas end desc,
+							t1.telefono desc) AS ROWNUMBER
+				,trim(case 	when length(t1.telefono::varchar)>10 
+							then left(t1.telefono::varchar,10)
+						when length(t1.telefono::varchar)=7 
+							then concat(t1.indicativo::varchar,t1.telefono::varchar)
+							else t1.telefono::varchar end) telefono 
+				/*,case when t7.llamadas is null then 0 else t7.llamadas end llamadas
+				,t7.porcentaje,t7.out_service_date,t7.true_service_date*/
+				/*,t7.out_service_date > t7.true_service_date*/
+from 
+(
+select distinct t9.deudor_id ,t9.telefono,t10.indicativo ,t10.telefono_estado 
+from
+(select distinct t8.deudor_id ,t8.telefono 
+from 
+(select distinct deudor_id ,telefono 
 from cbpo_claro.telefonos
-order by trim(deudor_id)desc,row_number ()
-	 			OVER (PARTITION  BY	trim(deudor_id)
-				ORDER BY	trim(deudor_id) desc,
-				telefono desc)desc;
+where deudor_id != ''
+and telefono between 999999 and 999999999999
+union 
+select distinct deudor_id ,telefono 
+from cbpo_claro.telefonos_positivos
+where deudor_id != ''
+and telefono between 999999 and 999999999999)t8)t9
+left join cbpo_claro.telefonos t10
+on t9.telefono = t10.telefono
+and t9.deudor_id = t10.deudor_id)t1
+left join
+(select t3.telefono,t3.llamadas,t3.porcentaje,t4.out_service_date,t6.true_service_date
+from
+(select t1.telefono
+,count(*) llamadas
+,100::float*(sum(t2.score::float)/count(*)::float) porcentaje
+from bi_snap.telefonos t1 
+left join bi_snap.status_vici t2
+on  t1.estado = t2.status
+where telefono between 999999 and 999999999999
+and telefono != 1111111
+and telefono != 3003383838
+and estado not in ('SVYEXT','NEW')
+group by t1.telefono
+order by count(*) desc, t1.telefono)t3
+left join 
+(select t5.telefono,max(t5.out_service_date) out_service_date
+from 
+(select telefono,estado ,count(*),max(fecha) out_service_date
+ from bi_snap.telefonos
+ where estado in ('ADC','LRERR')
+ and telefono between 999999 and 999999999999
+ group by telefono ,estado
+ order by telefono,estado)t5
+group by t5.telefono)t4
+on t3.telefono = t4.telefono
+left join
+(select t1.telefono ,max(t1.fecha) true_service_date
+from bi_snap.telefonos t1
+left join bi_snap.status_vici t2
+on  t1.estado = t2.status
+where t2.score > 0
+and telefono between 999999 and 999999999999
+group by telefono)t6
+on t3.telefono = t6.telefono
+where t3.telefono between 999999 and 999999999999
+order by t3.porcentaje desc,t3.telefono desc)t7-------------
+on t1.telefono = t7.telefono
+where t1.telefono_estado is true
+and concat(t1.indicativo::varchar,t1.telefono::varchar) != '0'
+--and t7.porcentaje is not null
+and case 	when t7.llamadas is null then 1
+	 		when t7.porcentaje = 0 and t7.llamadas < 10 then 1
+			when t7.out_service_date > t7.true_service_date then 0
+			when t7.porcentaje > 0 then 1 
+			else 0 end = 1
+order by trim(t1.deudor_id)desc,row_number ()
+	 			OVER (PARTITION  BY	trim(t1.deudor_id)
+				ORDER BY	trim(t1.deudor_id) desc,
+							case when t7.porcentaje is null then 0 end desc,
+							case when t7.llamadas is null then 0 else t7.llamadas end desc,
+							t1.telefono desc);

@@ -16,7 +16,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from cv_app.views import excel_CV_COL,csv_CV_Claro\
-    ,csv_CV_CarP,csv_CV_FalaJ,csv_CV_FalaC,csv_GesD_Davi,csv_CV_Sant
+        ,csv_CV_CarP,csv_CV_FalaJ,csv_CV_FalaC,csv_GesD_Davi\
+        ,csv_CV_Sant,csv_CV_Pop
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -26,5 +27,6 @@ urlpatterns = [
     path('csv_CV_FalaJ/', csv_CV_FalaJ),
     path('csv_CV_FalaC/', csv_CV_FalaC),
     path('csv_CV_Sant/', csv_CV_Sant),
+    path('csv_CV_Pop/', csv_CV_Pop),
     path('csv_GesD_Davi/', csv_GesD_Davi),
 ]
