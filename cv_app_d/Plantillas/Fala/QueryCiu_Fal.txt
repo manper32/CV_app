@@ -3,8 +3,10 @@ select distinct trim(deudor_id )
 	 			OVER (PARTITION  BY	trim(deudor_id )
 				ORDER BY	trim(deudor_id ) desc,
 							direccion desc) AS ROWNUMBER
-				,direccion
-from cbpo_propia.direcciones
+				--,direccion
+				,ciudad
+from cbpo_falabella.direcciones
+where direccion != ''
 order by trim(deudor_id )desc,row_number ()
 	 			OVER (PARTITION  BY	trim(deudor_id )
 				ORDER BY	trim(deudor_id) desc,

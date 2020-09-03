@@ -660,8 +660,7 @@ SELECT
 	m.fecha_primer_gestion,
 	m.fecha_ultima_gestion,
 	m.indicador AS perfil_mes_actual,
-	CASE WHEN m.contactability = 0 THEN 'No contacto'
-	ELSE 'Contacto' END contactabilidad,
+	CASE WHEN m.indicador IS NULL THEN 'No contacto' ELSE CASE WHEN m.contactability = 0 THEN 'No contacto'	ELSE 'Contacto' END END contactabilidad,
 	m.ultimo_alo,
 	m.descod1,
 	m.descod2,

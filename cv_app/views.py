@@ -103,20 +103,26 @@ def excel_CV_COL(request):
             
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Colp/QueryCV_COL.txt","r") as f4:
         queryP_cons = f4.read()
+        
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Colp/QueryCiu_COL.txt","r") as f6:
+        queryP_Ciu = f6.read()
 
     anwr = psql_pdc(queryP_PT)
     anwrC = psql_pdc(queryP_PC)
     anwrD = psql_pdc(queryP_PD)
+    anwrCi = psql_pdc(queryP_Ciu)
     yanwr = psql_pdc(queryP_cons)
 
     anwr_P = pd.DataFrame(anwr)
     anwr_C = pd.DataFrame(anwrC)
     anwr_D = pd.DataFrame(anwrD)
+    anwr_Ci = pd.DataFrame(anwrCi)
     df = pd.DataFrame(yanwr)
 
     inf = to_horiz(anwr_P,'phone',"deudor_id")
     infC = to_horiz(anwr_C,'mail',"deudor_id")
     infD = to_horiz(anwr_D,'address',"deudor_id")
+    infCi = to_horiz(anwr_Ci,'town',"deudor_id")
 
 
     df = df.rename(columns={0:'rownumber',
@@ -202,6 +208,8 @@ def excel_CV_COL(request):
     fn = pd.merge(fn,infC,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
     fn = pd.merge(fn,infD,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
+    fn = pd.merge(fn,infCi,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
 
     return excel(fn,tablename)
@@ -322,20 +330,26 @@ def csv_CV_CarP(request):
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/CarP/QueryCV_CarP.txt","r") as f4:
         queryP_cons = f4.read()
 
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/CarP/QueryCiu_CarP.txt","r") as f5:
+        queryP_Ciu = f5.read()
+
 
     anwr = psql_pdc(queryP_PT)
     anwrC = psql_pdc(queryP_PC)
     anwrD = psql_pdc(queryP_PD)
+    anwrCi = psql_pdc(queryP_Ciu)
     yanwr = psql_pdc(queryP_cons)
 
     anwr_P = pd.DataFrame(anwr)
     anwr_C = pd.DataFrame(anwrC)
     anwr_D = pd.DataFrame(anwrD)
+    anwr_Ci = pd.DataFrame(anwrCi)
     df = pd.DataFrame(yanwr)
 
     inf = to_horiz(anwr_P,'phone',"deudor_id")
     infC = to_horiz(anwr_C,'mail',"deudor_id")
     infD = to_horiz(anwr_D,'address',"deudor_id")
+    infCi = to_horiz(anwr_Ci,'town',"deudor_id")
 
     #renombrar campos CV
     df = df.rename(columns={0:'deudor_id',
@@ -402,6 +416,8 @@ def csv_CV_CarP(request):
                 ,how = "left",indicator = False)
     fn = pd.merge(fn,infD,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
+    fn = pd.merge(fn,infCi,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
 
     return csv_o(fn,tablename)                
 
@@ -426,12 +442,16 @@ def csv_CV_FalaJ(request):
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Fala/QueryRe_Fal.txt","r") as f6:
         queryP_PR = f6.read()
+        
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Fala/QueryCiu_Fal.txt","r") as f7:
+        queryP_Ciu = f7.read()
 
     anwr = psql_pdc(queryP_PT)
     anwrC = psql_pdc(queryP_PC)
     anwrD = psql_pdc(queryP_PD)
     anwrPa = psql_pdc(queryP_Pa)
     anwrR = psql_pdc(queryP_PR)
+    anwrCi = psql_pdc(queryP_Ciu)
     yanwr = psql_pdc(queryP_cons)
 
     anwr_P = pd.DataFrame(anwr)
@@ -439,12 +459,14 @@ def csv_CV_FalaJ(request):
     anwr_D = pd.DataFrame(anwrD)
     anwr_Pa = pd.DataFrame(anwrPa)
     anwr_R = pd.DataFrame(anwrR)
+    anwr_Ci = pd.DataFrame(anwrCi)
     df = pd.DataFrame(yanwr)
 
     inf = to_horiz(anwr_P,'phone',"deudor_id")
     infC = to_horiz(anwr_C,'mail',"deudor_id")
     infD = to_horiz(anwr_D,'address',"deudor_id")
     infR = to_horiz(anwr_R,'referencia',"deudor_id")
+    infCi = to_horiz(anwr_Ci,'town',"deudor_id")
     try:
         infP = to_horiz(anwr_Pa,'pago','obligacion_id')
     except:
@@ -546,7 +568,8 @@ def csv_CV_FalaJ(request):
                 ,how = "left",indicator = False)
     fn = pd.merge(fn,infD,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
-    
+    fn = pd.merge(fn,infCi,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
     if 'infP' in locals():
     #    Cruce pagos
         fn = pd.merge(fn,infP,on = ["obligacion_id"]\
@@ -579,12 +602,16 @@ def csv_CV_FalaC(request):
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Fala/QueryRe_Fal.txt","r") as f6:
         queryP_PR = f6.read()
+        
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Fala/QueryCiu_Fal.txt","r") as f7:
+        queryP_Ciu = f7.read()
 
     anwr = psql_pdc(queryP_PT)
     anwrC = psql_pdc(queryP_PC)
     anwrD = psql_pdc(queryP_PD)
     anwrPa = psql_pdc(queryP_Pa)
     anwrR = psql_pdc(queryP_PR)
+    anwrCi = psql_pdc(queryP_Ciu)
     yanwr = psql_pdc(queryP_cons)
 
     anwr_P = pd.DataFrame(anwr)
@@ -592,12 +619,14 @@ def csv_CV_FalaC(request):
     anwr_D = pd.DataFrame(anwrD)
     anwr_Pa = pd.DataFrame(anwrPa)
     anwr_R = pd.DataFrame(anwrR)
+    anwr_Ci = pd.DataFrame(anwrCi)
     df = pd.DataFrame(yanwr)
 
     inf = to_horiz(anwr_P,'phone',"deudor_id")
     infC = to_horiz(anwr_C,'mail',"deudor_id")
     infD = to_horiz(anwr_D,'address',"deudor_id")
     infR = to_horiz(anwr_R,'referencia',"deudor_id")
+    infCi = to_horiz(anwr_Ci,'town',"deudor_id")
     try:
         infP = to_horiz(anwr_Pa,'pago','obligacion_id')
     except:
@@ -614,80 +643,79 @@ def csv_CV_FalaC(request):
                             7:'deudor_id',
                             8:'nombre',
                             9:'producto',
-                            10:'saldototal',
-                            11:'saldo_pareto',
-                            12:'segmentacion',
-                            13:'peso',
-                            14:'alturamora_hoy',
-                            15:'rango',
-                            16:'dias_mora',
-                            17:'vencto',
-                            18:'mejor_gestion',
-                            19:'total_gestiones',
-                            20:'fecha_ultima_gestion',
-                            21:'asesor_mejor_gestion',
-                            22:'fecha_compromiso',
-                            23:'fecha_pago_compromiso',
-                            24:'valor_compromiso',
-                            25:'estado_acuerdo',
-                            26:'dias_mora_pagos',
-                            27:'valor_pago',
-                            28:'fecha_pago',
-                            29:'pagos_reales',
-                            30:'pago_para_honorarios',
-                            31:'pago_para_factura',
-                            32:'pendiente',
-                            33:'pago_total',
-                            34:'nvo_status',
-                            35:'status_refresque',
-                            36:'nvo_status_refresque',
-                            37:'dias_mora_refresque',
-                            38:'pendiente_mas_gastos',
-                            39:'vencida_mas_gastos',
-                            40:'gastos_mora',
-                            41:'gastos_cv',
-                            42:'porcentaje_gasto',
-                            43:'valor_a_mantener_sin_gxc',
-                            44:'cv4',
-                            45:'cv5',
-                            46:'cv6',
-                            47:'cv7',
-                            48:'cv8',
-                            49:'cv9',
-                            50:'cv10',
-                            51:'cv11',
-                            52:'cv12',
-                            53:'restructuracion',
-                            54:'valor_restruc',
-                            55:'pagominimo_anterior',
-                            56:'pagominimo_actual',
-                            57:'aplica_ajuste',
-                            58:'fecha',
-                            59:'diferencia',
-                            60:'porcentaje_saldo_total',
-                            61:'x',
-                            62:'valor',
-                            63:'porcentaje_participacion',
-                            64:'ind_m4',
-                            65:'ind_m3',
-                            66:'ind_m2',
-                            67:'ind_m1',
-                            68:'fecha_primer_gestion',
-                            69:'telefono_mejor_gestion',
-                            70:'fecha_gestion',
-                            71:'contactabilidad',
-                            72:'indicador_hoy',
-                            73:'repeticion',
-                            74:'llamadas',
-                            75:'sms',
-                            76:'correos',
-                            77:'gescall',
-                            78:'whatsapp',
-                            79:'visitas',
-                            80:'no_contacto',
-                            81:'telefono_positivo',
-                            82:'fec_ultima_marcacion',
-                            83:'lista_robinson'})
+                            10:'saldo_capital',
+                            11:'segmentacion',
+                            12:'peso',
+                            13:'alturamora_hoy',
+                            14:'rango',
+                            15:'dias_mora',
+                            16:'vencto',
+                            17:'mejor_gestion',
+                            18:'total_gestiones',
+                            19:'fecha_ultima_gestion',
+                            20:'asesor_mejor_gestion',
+                            21:'fecha_compromiso',
+                            22:'fecha_pago_compromiso',
+                            23:'valor_compromiso',
+                            24:'estado_acuerdo',
+                            25:'dias_mora_pagos',
+                            26:'valor_pago',
+                            27:'fecha_pago',
+                            28:'pagos_reales',
+                            29:'pago_para_honorarios',
+                            30:'pago_para_factura',
+                            31:'pendiente',
+                            32:'pago_total',
+                            33:'nvo_status',
+                            34:'status_refresque',
+                            35:'nvo_status_refresque',
+                            36:'dias_mora_refresque',
+                            37:'pendiente_mas_gastos',
+                            38:'vencida_mas_gastos',
+                            39:'gastos_mora',
+                            40:'gastos_cv',
+                            41:'porcentaje_gasto',
+                            42:'valor_a_mantener_sin_gxc',
+                            43:'cv4',
+                            44:'cv5',
+                            45:'cv6',
+                            46:'cv7',
+                            47:'cv8',
+                            48:'cv9',
+                            49:'cv10',
+                            50:'cv11',
+                            51:'cv12',
+                            52:'restructuracion',
+                            53:'valor_restruc',
+                            54:'pagominimo_anterior',
+                            55:'pagominimo_actual',
+                            56:'aplica_ajuste',
+                            57:'fecha',
+                            58:'diferencia',
+                            59:'porcentaje_saldo_total',
+                            60:'x',
+                            61:'valor',
+                            62:'porcentaje_participacion',
+                            63:'ind_m4',
+                            64:'ind_m3',
+                            65:'ind_m2',
+                            66:'ind_m1',
+                            67:'fecha_primer_gestion',
+                            68:'telefono_mejor_gestion',
+                            69:'fecha_gestion',
+                            70:'contactabilidad',
+                            71:'indicador_hoy',
+                            72:'repeticion',
+                            73:'llamadas',
+                            74:'sms',
+                            75:'correos',
+                            76:'gescall',
+                            77:'whatsapp',
+                            78:'visitas',
+                            79:'no_contacto',
+                            80:'telefono_positivo',
+                            81:'fec_ultima_marcacion',
+                            82:'lista_robinson'})
 
 
     fn = pd.merge(df,inf,on = ["deudor_id"]\
@@ -697,6 +725,8 @@ def csv_CV_FalaC(request):
     fn = pd.merge(fn,infC,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
     fn = pd.merge(fn,infD,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
+    fn = pd.merge(fn,infCi,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
 
     if 'infP' in locals():
@@ -726,19 +756,25 @@ def csv_CV_Sant(request):
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Sant/QueryCV_San.txt","r") as f4:
         queryP_cons = f4.read()
         
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Sant/QueryCiu_San.txt","r") as f5:
+        queryP_Ciu = f5.read()
+        
     anwr = psql_pdc(queryP_PT)
     anwrC = psql_pdc(queryP_PC)
     anwrD = psql_pdc(queryP_PD)
+    anwrCi = psql_pdc(queryP_Ciu)
     yanwr = psql_pdc(queryP_cons)
 
     anwr_P = pd.DataFrame(anwr)
     anwr_C = pd.DataFrame(anwrC)
     anwr_D = pd.DataFrame(anwrD)
+    anwr_Ci = pd.DataFrame(anwrCi)
     df = pd.DataFrame(yanwr)
 
     inf = to_horiz(anwr_P,'phone',"deudor_id")
     infC = to_horiz(anwr_C,'mail',"deudor_id")
     infD = to_horiz(anwr_D,'address',"deudor_id")
+    infCi = to_horiz(anwr_Ci,'town',"deudor_id")
 
     #renombrar campos CV
     df = df.rename(columns={0:'entidad',
@@ -803,6 +839,8 @@ def csv_CV_Sant(request):
                 ,how = "left",indicator = False)
     fn = pd.merge(fn,infD,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
+    fn = pd.merge(fn,infCi,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
 
     lt = fn.columns.tolist()
     lt = lt[:52] + lt[-(inf.shape[1] + infC.shape[1] + infD.shape[1] -3):] + lt[52:55]
@@ -829,21 +867,27 @@ def csv_CV_Pop(request):
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Pop/QueryPa_Pop.txt","r") as f5:
         queryP_Pa = f5.read()
         
+    with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Pop/QueryCiu_Pop.txt","r") as f6:
+        queryP_Ciu = f6.read()
+        
     anwr = psql_pdc(queryP_PT)
     anwrC = psql_pdc(queryP_PC)
     anwrD = psql_pdc(queryP_PD)
     anwrPa = psql_pdc(queryP_Pa)
+    anwrCi = psql_pdc(queryP_Ciu)
     yanwr = psql_pdc(queryP_cons)
 
     anwr_P = pd.DataFrame(anwr)
     anwr_C = pd.DataFrame(anwrC)
     anwr_D = pd.DataFrame(anwrD)
     anwr_Pa = pd.DataFrame(anwrPa)
+    anwr_Ci = pd.DataFrame(anwrCi)
     df = pd.DataFrame(yanwr)
 
     inf = to_horiz(anwr_P,'phone',"deudor_id")
     infC = to_horiz(anwr_C,'mail',"deudor_id")
     infD = to_horiz(anwr_D,'address',"deudor_id")
+    infCi = to_horiz(anwr_Ci,'town',"deudor_id")
     try:
         infP = to_horiz(anwr_Pa,'pago','llave')
     except:
@@ -916,6 +960,8 @@ def csv_CV_Pop(request):
     fn = pd.merge(fn,infC,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
     fn = pd.merge(fn,infD,on = ["deudor_id"]\
+                ,how = "left",indicator = False)
+    fn = pd.merge(fn,infCi,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
     if 'infP' in locals():
     #    Cruce pagos
