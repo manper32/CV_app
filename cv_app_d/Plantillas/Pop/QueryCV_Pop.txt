@@ -81,7 +81,9 @@ compromisos AS (SELECT *
 				FROM basecompromisos 
 				WHERE contador = 1),
 ciclo AS (SELECT obligacion_id ,min(fecha_registro ) AS fechamin
-			   FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)GROUP BY obligacion_id ),
+			   FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)
+			   AND fecha_registro >= (SELECT DISTINCT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE)
+			   GROUP BY obligacion_id ),
 cicloinicio AS (SELECT DISTINCT a.saldo_capital,c.obligacion_id, a.dia_de_corte,a.dias_en_mora_inicial::NUMERIC ,CASE WHEN dias_en_mora_inicial::NUMERIC = 0 THEN '0'
 																											WHEN dias_en_mora_inicial::NUMERIC >= 1 AND dias_en_mora_inicial::NUMERIC <= 30 THEN '1 A 30'
 																											WHEN dias_en_mora_inicial::NUMERIC >= 31 AND dias_en_mora_inicial::NUMERIC <= 60 THEN '31 A 60'
@@ -131,7 +133,7 @@ SELECT DISTINCT
 	u.unico::TEXT,
 	cop.nombre::TEXT AS nombre_prod,
     cop.lin_descripcion::TEXT , 
-	ca.deudor_id::TEXT,
+	concat('1',ca.deudor_id)::TEXT AS deudor_id,
 	concat(ca.primer_nombre ,' ',ca.segundo_nombre ,' ',ca.primer_apellido ,' ',ca.segundo_apellido) AS nombre_cliente,
 	t.tipo_cliente,
 	ca.estado_actual_cartera,
@@ -192,8 +194,8 @@ SELECT DISTINCT
     tlp.fec_ultima_marcacion AS fec_ult_marc_tel_pos,
     tlp.telefono::TEXT  AS tel_positivo
 FROM cbpo_popular.cons_asignacion AS ca
-INNER JOIN cbpo_popular.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
-INNER JOIN cicloinicio AS ci ON ci.obligacion_id = ca.obligacion_id
+LEFT JOIN cbpo_popular.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
+LEFT JOIN cicloinicio AS ci ON ci.obligacion_id = ca.obligacion_id
 LEFT JOIN sumapagos AS sp ON sp.obligacion_id = ca.obligacion_id
 LEFT JOIN actual AS a ON a.obligacion_id = ca.obligacion_id
 LEFT JOIN sumapareto AS p ON p.deudor_id = ca.deudor_id 

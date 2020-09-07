@@ -90,7 +90,7 @@ def excel(fn,name):
 
 def excel_CV_COL(request):
     today = datetime.now()
-    tablename = "CV_Col"+today.strftime("%Y%m%d%H")+'.xlsx'
+    tablename = "CV_Col"+today.strftime("%Y%m%d%H") + ".xlsx"
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Colp/QueryTel_COL.txt","r") as f1:
         queryP_PT = f1.read()
@@ -217,7 +217,7 @@ def excel_CV_COL(request):
 
 def csv_CV_Claro(request):
     today = datetime.now()
-    tablename = "CV_Claro"+today.strftime("%Y%m%d%H")+'.csv'
+    tablename = "CV_Claro" + today.strftime("%Y%m%d%H") + ".csv"
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Claro/QueryTel_Claro.txt","r") as f1:
         queryP_PT = f1.read()
@@ -237,7 +237,7 @@ def csv_CV_Claro(request):
     anwr_C = pd.DataFrame(anwrC)
     df = pd.DataFrame(yanwr)
 
-    anwr_P1 = to_horiz(anwr_P,'phone',"deudor_id")
+    anwr_P1 = to_horiz(anwr_P,'phone','deudor_id')
 
     #renombrar campos correos
     anwr_C = anwr_C.rename(columns={
@@ -247,8 +247,7 @@ def csv_CV_Claro(request):
                             2:'mail1'})
 
     #renombrar campos CV
-    df = df.rename(columns={
-                            0:'rownumber',
+    df = df.rename(columns={0:'rownumber',
                             1:'deudor_id',
                             2:'obligacion_id',
                             3:'nombredelcliente',
@@ -261,51 +260,52 @@ def csv_CV_Claro(request):
                             10:'writeoffmark',
                             11:'dias_mora',
                             12:'segmento_bpo',
-                            13:'valorscoring',
-                            14:'numeroreferenciadepago',
-                            15:'monto_inicial',
-                            16:'monto_ini_cuenta',
-                            17:'porcentaje_descuento',
-                            18:'valor_descuento',
-                            19:'valor_a_pagar',
-                            20:'deuda_real',
-                            21:'valor_pago',
-                            22:'saldo_pendiente',
-                            23:'fecha_pago',
-                            24:'fecha_compromiso',
-                            25:'fecha_pago_compromiso',
-                            26:'valor_compromiso',
-                            27:'estado_acuerdo',
-                            28:'ind_m4',
-                            29:'ind_m3',
-                            30:'ind_m2',
-                            31:'ind_m1',
-                            32:'fecha_primer_gestion',
-                            33:'fecha_ultima_gestion',
-                            34:'indicador',
-                            35:'tel_mes_actual',
-                            36:'asesor',
-                            37:'fecha_gestion',
-                            38:'contactabilidad',
-                            39:'indicador_hoy',
-                            40:'repeticion',
-                            41:'llamadas',
-                            42:'sms',
-                            43:'correos',
-                            44:'gescall_mes_actual',
-                            45:'whatsapp',
-                            46:'visitas',
-                            47:'no_contacto_mes_actual',
-                            48:'total_gestiones',
-                            49:'tel_positivo',
-                            50:'fec_ultima_marcacion'})
+                            13:'rango_bpo',
+                            14:'valorscoring',
+                            15:'numeroreferenciadepago',
+                            16:'monto_inicial',
+                            17:'monto_ini_cuenta',
+                            18:'porcentaje_descuento',
+                            19:'valor_descuento',
+                            20:'valor_a_pagar',
+                            21:'deuda_real',
+                            22:'valor_pago',
+                            23:'saldo_pendiente',
+                            24:'fecha_pago',
+                            25:'fecha_compromiso',
+                            26:'fecha_pago_compromiso',
+                            27:'valor_compromiso',
+                            28:'estado_acuerdo',
+                            29:'ind_m4',
+                            30:'ind_m3',
+                            31:'ind_m2',
+                            32:'ind_m1',
+                            33:'fecha_primer_gestion',
+                            34:'fecha_ultima_gestion',
+                            35:'indicador',
+                            36:'phone',
+                            37:'asesor',
+                            38:'fecha_gestion',
+                            39:'contactabilidad',
+                            40:'indicador_hoy',
+                            41:'repeticion',
+                            42:'llamadas',
+                            43:'sms',
+                            44:'correos',
+                            45:'gescall',
+                            46:'whatsapp',
+                            47:'visitas',
+                            48:'no_contacto',
+                            49:'total_gestiones',
+                            50:'telefono_positivo',
+                            51:'fec_ultima_marcacion'})
 
-    i=0
-    lin = ['no_contacto_mes_actual','gescall_mes_actual','tel_mes_actual','tel_positivo']
-    for i in lin:
-        df[i].fillna(0,inplace=True)
-        df[i] = df[i].apply(lambda x: round(x))
-        df[i] = df[i].astype('str')
+    # i=0
+    # lin = ['no_contacto_mes_actual','gescall_mes_actual','tel_mes_actual','tel_positivo']
+    # for i in lin:
+    #     df[i].fillna(0,inplace=True)
+    #     df[i] = df[i].apply(lambda x: round(x))
+    #     df[i] = df[i].astype('str')
 
     fn = pd.merge(df,anwr_P1,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
@@ -316,7 +316,7 @@ def csv_CV_Claro(request):
 
 def csv_CV_CarP(request):
     today = datetime.now()
-    tablename = "CV_CarP"+today.strftime("%Y%m%d%H")+'.csv'
+    tablename = "CV_CarP" + today.strftime("%Y%m%d%H")  + ".csv"
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/CarP/QueryTel_CarP.txt","r") as f1:
         queryP_PT = f1.read()
@@ -377,23 +377,23 @@ def csv_CV_CarP(request):
                             22:'capital_20_porciento',
                             23:'dias_mora_acumulado',
                             24:'marca_juridica_cliente',
-                            25:'investigacion_de_bienes',
+                            25:'focos',
                             26:'valor_pago',
-                            27:'ultima_fecha',
-                            28:'valor_compromiso',
-                            29:'fecha_compromiso',
-                            30:'fecha_pactada_compromiso',
-                            31:'asesor',
-                            32:'estado_acuerdo',
-                            33:'ind_m4',
-                            34:'ind_m3',
-                            35:'ind_m2',
-                            36:'ind_m1',
+                            27:'ultima_fecha_pago',
+                            28:'estado_cliente_mes_anterior',
+                            29:'valor_compromiso',
+                            30:'fecha_compromiso',
+                            31:'fecha_pactada_compromiso',
+                            32:'btrim',
+                            33:'regexp_replace',
+                            34:'regexp_replace',
+                            35:'regexp_replace',
+                            36:'regexp_replace',
                             37:'fecha_primer_gestion',
                             38:'fecha_ultima_gestion',
                             39:'indicador',
                             40:'telefono_mejor_gestion',
-                            41:'asesor',
+                            41:'btrim',
                             42:'fecha_gestion',
                             43:'contactabilidad',
                             44:'indicador_hoy',
@@ -407,7 +407,8 @@ def csv_CV_CarP(request):
                             52:'no_contacto',
                             53:'total_gestiones',
                             54:'telefono_positivo',
-                            55:'fec_ultima_marcacion'})
+                            55:'fec_ultima_marcacion',
+                            56:'investigacion_de_bienes'})
 
 
     fn = pd.merge(df,inf,on = ["deudor_id"]\
@@ -423,7 +424,7 @@ def csv_CV_CarP(request):
 
 def csv_CV_FalaJ(request):
     today = datetime.now()
-    tablename = "CV_FalJ"+today.strftime("%Y%m%d%H")+'.csv'
+    tablename = "CV_FalJ"+today.strftime("%Y%m%d%H") + ".csv"
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Fala/QueryTel_Fal.txt","r") as f1:
         queryP_PT = f1.read()
@@ -583,7 +584,7 @@ def csv_CV_FalaJ(request):
 
 def csv_CV_FalaC(request):
     today = datetime.now()
-    tablename = "CV_FalC"+today.strftime("%Y%m%d%H")+'.csv'
+    tablename = "CV_FalC"+today.strftime("%Y%m%d%H") + ".csv"
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Fala/QueryTel_Fal.txt","r") as f1:
         queryP_PT = f1.read()
@@ -742,7 +743,7 @@ def csv_CV_FalaC(request):
 
 def csv_CV_Sant(request):
     today = datetime.now()
-    tablename = "CV_San"+today.strftime("%Y%m%d%H")+'.csv'
+    tablename = "CV_San"+today.strftime("%Y%m%d%H") + ".csv"
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Sant/QueryTel_San.txt","r") as f1:
         queryP_PT = f1.read()
@@ -843,14 +844,14 @@ def csv_CV_Sant(request):
                 ,how = "left",indicator = False)
 
     lt = fn.columns.tolist()
-    lt = lt[:52] + lt[-(inf.shape[1] + infC.shape[1] + infD.shape[1] -3):] + lt[52:55]
+    lt = lt[:52] + lt[-(inf.shape[1] + infC.shape[1] + infD.shape[1] -1):] + lt[52:55]
     fn = fn[lt]
     
     return csv_o(fn,tablename)
 
 def csv_CV_Pop(request):
     today = datetime.now()
-    tablename = "CV_Pop"+today.strftime("%Y%m%d%H")+'.csv'
+    tablename = "CV_Pop" + today.strftime("%Y%m%d%H") + '.csv'
 
     with open("/home/manuel/Documentos/Django/cv_app_d/cv_app_d/Plantillas/Pop/QueryTel_Pop.txt","r") as f1:
         queryP_PT = f1.read()
@@ -895,66 +896,71 @@ def csv_CV_Pop(request):
 
     #renombrar campos CV
     df = df.rename(columns={0:'llave',
-                            1:'unico',
-                            2:'nombre_prod',
-                            3:'lin_descripcion',
-                            4:'deudor_id',
-                            5:'nombre_cliente',
-                            6:'tipo_cliente',
-                            7:'estado_actual_cartera',
-                            8:'obligacion_id',
-                            9:'inicio_corte',
-                            10:'fecha_desembolso',
-                            11:'ciclo',
-                            12:'dias_en_mora_inicial',
-                            13:'dias_en_mora_final',
-                            14:'valor_compromiso',
-                            15:'fecha_creacion_compromiso',
-                            16:'fecha_pago_compromiso',
-                            17:'asesor_compromiso',
-                            18:'pagos_acumulados',
-                            19:'cantidad_pagos',
-                            20:'rango_mora_inicial',
-                            21:'rango_mora_final',
-                            22:'estado',
-                            23:'valmora',
-                            24:'valmora_pareto',
-                            25:'porcentaje_peso_mora',
-                            26:'capital_inicial',
-                            27:'saltotalpareto',
-                            28:'pago_minimo',
-                            29:'rango_saltotal',
-                            30:'asignacion_inicial',
-                            31:'wasis_banco',
-                            32:'fecha_de_retiro',
-                            33:'tipo_cliente',
-                            34:'ind_m4',
-                            35:'ind_m3',
-                            36:'ind_m2',
-                            37:'ind_m1',
-                            38:'ind_mejor_gestion',
-                            39:'fec_mejor_gestion',
-                            40:'tel_mejor_gestion',
-                            41:'asesor_mejor_gestion',
-                            42:'contactability',
-                            43:'ind_mejor_gestion_hoy',
-                            44:'asesor_mejor_gestion_hoy',
-                            45:'fecha_primer_gestion',
-                            46:'fecha_ultima_gestion',
-                            47:'repeticion',
-                            48:'llamadas',
-                            49:'sms',
-                            50:'correos',
-                            51:'gescall',
-                            52:'whatsapp',
-                            53:'visitas',
-                            54:'no_contacto',
-                            55:'total_gestiones',
-                            56:'primer_alo',
-                            57:'ultimo_alo',
-                            58:'fec_ult_marc_tel_pos',
-                            59:'tel_positivo'})
+    1:'unico',
+    2:'nombre_prod',
+    3:'lin_descripcion',
+    4:'deudor_id',
+    5:'nombre_cliente',
+    6:'tipo_cliente',
+    7:'estado_actual_cartera',
+    8:'obligacion_id',
+    9:'inicio_corte',
+    10:'fecha_desembolso',
+    11:'ciclo',
+    12:'dias_en_mora_inicial',
+    13:'dias_en_mora_final',
+    14:'valor_compromiso',
+    15:'fecha_creacion_compromiso',
+    16:'fecha_pago_compromiso',
+    17:'asesor_compromiso',
+    18:'pagos_acumulados',
+    19:'cantidad_pagos',
+    20:'rango_mora_inicial',
+    21:'rango_mora_final',
+    22:'estado',
+    23:'valmora',
+    24:'valmora_pareto',
+    25:'porcentaje_peso_mora',
+    26:'capital_inicial',
+    27:'saltotalpareto',
+    28:'pago_minimo',
+    29:'rango_saltotal',
+    30:'asignacion_inicial',
+    31:'wasis_banco',
+    32:'fecha_de_retiro',
+    33:'tipo_cliente',
+    34:'ind_m4',
+    35:'ind_m3',
+    36:'ind_m2',
+    37:'ind_m1',
+    38:'ind_mejor_gestion',
+    39:'fec_mejor_gestion',
+    40:'tel_mejor_gestion',
+    41:'asesor_mejor_gestion',
+    42:'contactability',
+    43:'ind_mejor_gestion_hoy',
+    44:'asesor_mejor_gestion_hoy',
+    45:'fecha_primer_gestion',
+    46:'fecha_ultima_gestion',
+    47:'repeticion',
+    48:'llamadas',
+    49:'sms',
+    50:'correos',
+    51:'gescall',
+    52:'whatsapp',
+    53:'visitas',
+    54:'no_contacto',
+    55:'total_gestiones',
+    56:'primer_alo',
+    57:'ultimo_alo',
+    58:'fec_ult_marc_tel_pos',
+    59:'tel_positivo'})
             
+    inf["deudor_id"] = "1" + inf["deudor_id"]
+    infC["deudor_id"] = "1" + infC["deudor_id"]
+    infD["deudor_id"] = "1" + infD["deudor_id"]
+    infCi["deudor_id"] = "1" + infCi["deudor_id"]
+
     fn = pd.merge(df,inf,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
     fn = pd.merge(fn,infC,on = ["deudor_id"]\

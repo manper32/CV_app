@@ -132,13 +132,9 @@ SELECT
 	'$ '||ROUND((ss.saldo_k_pareto * 20) / 100) AS capital_20_porciento,
 	ca.dias_mora_acumulado,
 	ca.marca_juridica_cliente,
-	ca.investigacion_de_bienes,
+	NULL AS focos,
 	'$ '||bp.valortotal AS valor_pago,
-	bp.ultima_fecha,
-	'$ '||cp.valor_compromiso AS valor_compromiso,
-	cp.fecha_compromiso,
-	cp.fecha_pactada_compromiso,
-	TRIM(cp.asesor),
+	bp.ultima_fecha AS ultima_fecha_pago,	
 	CASE 
 		WHEN cp.fecha_pactada_compromiso IS NULL AND bp.valortotal IS NULL THEN 'Sin acuerdo'
 		WHEN cp.fecha_pactada_compromiso IS NULL AND bp.valortotal IS NOT NULL AND bp.valortotal > 0 THEN 'Pago sin compromiso' 
@@ -150,7 +146,11 @@ SELECT
 		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal >= regexp_replace(ca.saldo_total_mes_vigente , '[^0-9]', '','g')::NUMERIC THEN 'Cumplido'
 		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal < regexp_replace(ca.saldo_total_mes_vigente , '[^0-9]', '','g')::NUMERIC THEN 'Pago parcial'
 		WHEN cp.fecha_pactada_compromiso IS NOT NULL AND bp.valortotal IS NULL THEN 'Incumplido' 
-	END AS estado_acuerdo,
+	END AS estado_cliente_mes_anterior,
+	'$ '||cp.valor_compromiso AS valor_compromiso,
+	cp.fecha_compromiso,
+	cp.fecha_pactada_compromiso,
+	TRIM(cp.asesor),
 	regexp_replace(mg.ind_m4, '[^a-zA-Z]', '', 'g'),
 	regexp_replace(mg.ind_m3, '[^a-zA-Z]', '', 'g'),
 	regexp_replace(mg.ind_m2, '[^a-zA-Z]', '', 'g'),
@@ -175,7 +175,8 @@ SELECT
 	mg.no_contacto::TEXT ,
 	mg.total_gestiones::TEXT ,
 	tp.telefono::TEXT AS telefono_positivo,
-	tp.fec_ultima_marcacion
+	tp.fec_ultima_marcacion,
+	ca.investigacion_de_bienes	
 FROM cbpo_propia.cons_asignacion AS ca
 LEFT  JOIN cbpo_propia.unicos AS u ON u.obligacion_id = ca.obligacion_id 
 LEFT JOIN cbpo_propia.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
