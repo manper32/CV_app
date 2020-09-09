@@ -668,6 +668,7 @@ SELECT
 	m.fecha_gestion,
 	m.phone AS telefono_mejor_gestion,
 	md.indicador AS mejorgestionhoy,
+	md.asesor AS asesor_indicador_hoy,
 	CASE WHEN m.repeticion IS NULL THEN 0
 	ELSE m.repeticion END ,
 	CASE WHEN m.llamadas IS NULL THEN 0

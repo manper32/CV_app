@@ -82,7 +82,7 @@ SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
     mg.fecha_primer_gestion,--31
     mg.fecha_ultima_gestion,--32
 	CASE WHEN p.valor_pago >= CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((round(ca.modinitcta::NUMERIC ) - ((d.descuento * round(ca.modinitcta::NUMERIC ))/ 100))) END THEN 'YA PAGO' ELSE mg.indicador END AS indicador,--33
-    mg.phone,--34
+    mg.phone::text,--34
     mg.asesor,--35
     mg.fecha_gestion,--36
     CASE WHEN mg.contactability IS NULL OR mg.contactability = 0 THEN 'No contacto' 
@@ -106,7 +106,7 @@ SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
         CASE WHEN mg.visitas IS NULL THEN 0 ELSE mg.visitas END +
         CASE WHEN mg.no_contacto IS NULL THEN 0 ELSE mg.no_contacto END
         ) AS total_gestiones,--47
-    round(tp.telefono) AS telefono_positivo,--48
+    round(tp.telefono)::text AS telefono_positivo,--48
     tp.fec_ultima_marcacion--49
 FROM cbpo_claro.cons_asignacion AS ca
     LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id 

@@ -129,7 +129,13 @@ paretoporproducto AS (SELECT DISTINCT deudor_id,estado_actual_cartera, sum(REPLA
 						AND asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)
 						GROUP BY estado_actual_cartera,deudor_id)
 SELECT DISTINCT 
-	ca.obligacion_id AS llave,
+	CASE 
+		WHEN ca.entidad = 'TDCEXPRES' AND ci.dias_en_mora_inicial::NUMERIC > 60 THEN 'Avanzada'
+		WHEN ca.entidad = 'TDCEXPRES' AND ci.dias_en_mora_inicial::NUMERIC <= 60 THEN 'Vigente'
+		WHEN ca.entidad <> 'TDCEXPRES' THEN NULL 
+	END AS tipo_bpo,
+	concat('1',ca.obligacion_id) AS llave,
+	ca.entidad, 
 	u.unico::TEXT,
 	cop.nombre::TEXT AS nombre_prod,
     cop.lin_descripcion::TEXT , 
