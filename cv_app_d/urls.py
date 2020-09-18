@@ -17,7 +17,7 @@ from django.contrib import admin
 from django.urls import path
 from cv_app.views import excel_CV_COL,csv_CV_Claro\
         ,csv_CV_CarP,csv_CV_FalaJ,csv_CV_FalaC,csv_GesD_Davi\
-        ,csv_CV_Sant,csv_CV_Pop
+        ,csv_CV_Sant,csv_CV_Pop,csv_GesD_Claro,csv_CV_Dav
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -28,5 +28,7 @@ urlpatterns = [
     path('csv_CV_FalaC/', csv_CV_FalaC),
     path('csv_CV_Sant/', csv_CV_Sant),
     path('csv_CV_Pop/', csv_CV_Pop),
+    path('csv_CV_Dav/', csv_CV_Dav),
     path('csv_GesD_Davi/', csv_GesD_Davi),
+    path('csv_GesD_Claro/', csv_GesD_Claro),
 ]

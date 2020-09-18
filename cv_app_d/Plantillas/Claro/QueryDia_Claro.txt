@@ -1,0 +1,2 @@
+select *
+from cbpo_claro.mejor_gestion_dia;

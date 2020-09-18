@@ -26,7 +26,39 @@ compromisos AS (SELECT * FROM basecompromisos WHERE contador = 1 AND  fecha_comp
 pagos AS (SELECT obligacion_id,sum(pago_valor) AS valor_pago ,max(pago_fecha) AS fecha_pago 
 		  FROM cbpo_claro.pagos 
 		  WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_claro.asignaciones WHERE estado = TRUE )
-		GROUP BY obligacion_id)
+		GROUP BY obligacion_id),
+basedescuentosascard AS (
+SELECT DISTINCT 
+	ca.obligacion_id,
+	t.tipo,
+	lower(ca.segmento_bpo)AS segmento ,
+	upper(ca.crmorigen) AS crm
+FROM cbpo_claro.cons_asignacion AS ca
+LEFT JOIN cbpo_claro.tecnologia_equipos AS t ON t.obligacion_id = ca.obligacion_id
+WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_claro.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_claro.asignaciones WHERE estado = TRUE ))),
+descuentosascard AS (
+SELECT DISTINCT c.obligacion_id,c.tipo,c.segmento,c.crm,d.descuento FROM basedescuentosascard AS c 
+LEFT JOIN cbpo_claro.descuentos AS d ON lower(d.segmento) = c.segmento
+AND upper(d.crm ) = c.crm
+AND d.tecnologia_equipos = c.tipo
+WHERE c.crm = 'ASCARD'),
+basedescuentosnoascard AS (
+SELECT DISTINCT 
+	ca.obligacion_id,
+	t.tipo,
+	lower(ca.segmento_bpo)AS segmento ,
+	upper(ca.crmorigen) AS crm
+FROM cbpo_claro.cons_asignacion AS ca
+LEFT JOIN cbpo_claro.tecnologia_equipos AS t ON t.obligacion_id = ca.obligacion_id
+WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_claro.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_claro.asignaciones WHERE estado = TRUE ))),
+descuentosnoascard AS (
+SELECT DISTINCT c.obligacion_id,c.tipo,c.segmento,c.crm,d.descuento FROM basedescuentosnoascard AS c 
+LEFT JOIN cbpo_claro.descuentos AS d ON lower(d.segmento) = c.segmento
+AND upper(d.crm ) = c.crm
+WHERE c.crm <> 'ASCARD'),descuentos AS (
+SELECT * FROM descuentosnoascard
+UNION
+SELECT * FROM descuentosascard)		
 SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
     ca.deudor_id,--2 
     ca.obligacion_id,--3
@@ -40,7 +72,8 @@ SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
     ca.writeoffmark,--11
     ca.debtageinicial AS dias_mora,
 	ca.segmento_bpo,--12
-	ca.rango_bpo,  
+	ca.rango_bpo,
+	d.tipo,
     ca.valorscoring,--13
     ca.numeroreferenciadepago,--14
     '$ ' || round(ca.montoinicial::NUMERIC) AS monto_inicial,--15
@@ -109,69 +142,20 @@ SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
     round(tp.telefono)::text AS telefono_positivo,--48
     tp.fec_ultima_marcacion--49
 FROM cbpo_claro.cons_asignacion AS ca
-    LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id 
-    LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
-    LEFT JOIN cbpo_claro.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
-    LEFT JOIN cbpo_claro.unicos AS u ON u.obligacion_id = ca.obligacion_id
-    LEFT JOIN cbpo_claro.descuentos AS d ON d.segmento = 
-CASE WHEN ca.prepotencialmark = 'Y' THEN
-    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
-        WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
-        WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' 
-    END
-        WHEN ca.potencialmark = 'Y' THEN
-    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
-        WHEN ca.crmorigen = 'RR' THEN 'churn'
-        WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
-        WHEN ca.potencialmark = 'N' AND ca.prepotencialmark = 'N' AND ca.writeoffmark = 'N' AND ca.debtageinicial = '0' THEN
-        CASE WHEN ca.valorscoring >= '60' THEN 'pp'
-             WHEN ca.valorscoring <'60' THEN 'flp'
-             WHEN ca.valorscoring IS NULL THEN 'flp' 
-        END
-        WHEN ca.potencialmark = 'Y' THEN 'Potencial'
-        WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
-        WHEN ca.debtageinicial = '30' THEN '30'
-        WHEN ca.debtageinicial = '60' THEN '60'
-        WHEN ca.debtageinicial = '90' THEN '90'
-        WHEN ca.debtageinicial = '120' THEN '120'
-        WHEN ca.debtageinicial = '150' THEN '150'
-        WHEN ca.debtageinicial = '180' THEN '180'
-        WHEN ca.debtageinicial = '210' THEN '210' 
-END          
+LEFT JOIN descuentos AS d ON d.obligacion_id = ca.obligacion_id 
+LEFT JOIN compromisos AS cp ON cp.obligacion_id = ca.obligacion_id 
+LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
+LEFT JOIN cbpo_claro.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
+LEFT JOIN cbpo_claro.unicos AS u ON u.obligacion_id = ca.obligacion_id
 LEFT JOIN cbpo_claro.exclusiones_descuentos AS ed ON ed.obligacion_id = ca.obligacion_id
 LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
 LEFT JOIN pagos AS p ON p.obligacion_id = ca.obligacion_id
 LEFT JOIN cbpo_claro.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id 
 WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_claro.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_claro.asignaciones WHERE estado = TRUE ))
 GROUP BY md.indicador,mg.contactability,ca.fecha_registro,ca.deudor_id,ca.obligacion_id,ca.crmorigen,ca.potencialmark,  ca.prepotencialmark,ca.writeoffmark,ca.valorscoring,ca.numeroreferenciadepago,
-ca.estado,ca.nombredelcliente,ca.montoinicial,ca.modinitcta,ca.deudarealcuenta,p.valor_pago,p.fecha_pago,ca.debtageinicial,ed.obligacion_id,
-CASE WHEN ca.prepotencialmark = 'Y' THEN
-    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'Preprovision'
-        WHEN ca.crmorigen = 'RR' THEN 'Prechurn'
-        WHEN ca.crmorigen = 'BSCS' THEN 'Prepotencial' 
-    END
-        WHEN ca.potencialmark = 'Y' THEN
-    CASE WHEN ca.crmorigen = 'ASCARD' THEN 'provision'
-        WHEN ca.crmorigen = 'RR' THEN 'churn'
-        WHEN ca.crmorigen = 'BSCS' THEN 'potencial' END
-        WHEN ca.potencialmark = 'N' AND ca.prepotencialmark = 'N' AND ca.writeoffmark = 'N' AND ca.debtageinicial = '0' THEN
-        CASE WHEN ca.valorscoring >= '60' THEN 'pp'
-             WHEN ca.valorscoring <'60' THEN 'flp'
-             WHEN ca.valorscoring IS NULL THEN 'flp' 
-        END
-        WHEN ca.potencialmark = 'Y' THEN 'Potencial'
-        WHEN ca.writeoffmark = 'Y' THEN 'Castigo'
-        WHEN ca.debtageinicial = '30' THEN '30'
-        WHEN ca.debtageinicial = '60' THEN '60'
-        WHEN ca.debtageinicial = '90' THEN '90'
-        WHEN ca.debtageinicial = '120' THEN '120'
-        WHEN ca.debtageinicial = '150' THEN '150'
-        WHEN ca.debtageinicial = '180' THEN '180'
-        WHEN ca.debtageinicial = '210' THEN '210' 
-END,
-t.tipo_cliente,u.unico,
+ca.estado,ca.nombredelcliente,ca.montoinicial,ca.modinitcta,ca.deudarealcuenta,p.valor_pago,p.fecha_pago,ca.debtageinicial,ed.obligacion_id,ca.segmento_bpo,t.tipo_cliente,u.unico,
 CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN '% 0' ELSE '% ' || d.descuento END,
 CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN 0 ELSE ROUND(((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100)) END,
 CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((ROUND(ca.modinitcta::NUMERIC ) - ((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100))) END,
 mg.indicador,mg.repeticion,mg.llamadas,mg.sms,mg.correos,mg.gescall,mg.whatsapp,mg.no_contacto,mg.fecha_gestion,mg.visitas,mg.phone, mg.asesor,mg.fecha_primer_gestion,mg.fecha_ultima_gestion,
-mg.ind_m1,mg.ind_m2,mg.ind_m3,mg.ind_m4,tp.telefono,tp.fec_ultima_marcacion,cp.fecha_compromiso,cp.fecha_pago,cp.valor,	ca.segmento_bpo,ca.rango_bpo;
+mg.ind_m1,mg.ind_m2,mg.ind_m3,mg.ind_m4,tp.telefono,tp.fec_ultima_marcacion,cp.fecha_compromiso,cp.fecha_pago,cp.valor,	ca.segmento_bpo,ca.rango_bpo,d.tipo,d.segmento, d.descuento, d.crm;
