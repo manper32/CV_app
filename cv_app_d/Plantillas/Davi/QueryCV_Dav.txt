@@ -110,12 +110,12 @@ SELECT DISTINCT
 	END, 
 	ca.deudor_id AS deudor_id,
 	ca.obligacion_id AS obligacion_id,
-	CASE WHEN e.obligacion_nueva::NUMERIC = 0 THEN NULL ELSE e.obligacion_nueva::NUMERIC END AS nueva_obligacion,
+ 	CASE WHEN e.obligacion_nueva::NUMERIC = 0 THEN NULL ELSE e.obligacion_nueva::NUMERIC END AS nueva_obligacion,
 	ca.nombre_titular AS nombre_cliente,
-	ca.macroportafolio_cliente AS macroportafolio,
+	regexp_replace(ca.macroportafolio_cliente, '[^a-z^A-Z^0-9]', '', 'g') AS macroportafolio,
 	ca.macroproducto AS producto,
 	ca.descripcion_producto AS detalle_producto,
-	u.unico,
+	u.unico::TEXT AS unico,
 	ca.exposicion_por_mora_cliente AS exposicion_cliente,
 	ca.rango_por_mora_inicial_producto AS franja_mora,
 	ca.dias_de_mora_inicial_producto AS dias,
@@ -142,17 +142,23 @@ SELECT DISTINCT
 	ca.cant_reestructuraciones,
 	ca.tasa_de_interes,
 	CASE 
-		WHEN ca.ciclo_de_pago::NUMERIC > 30 OR ca.ciclo_de_pago::NUMERIC IS NULL THEN ca.fecha_limite_de_pago::NUMERIC 
-		ELSE ca.ciclo_de_pago::NUMERIC 
+		WHEN CASE WHEN regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') = '' THEN NULL ELSE regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') END > '30' OR regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') IS NULL THEN EXTRACT(DAY FROM CASE WHEN length(regexp_replace(fecha_limite_de_pago, '[^a-z^A-Z^0-9]', '', 'g')) <> 8 THEN NULL ELSE regexp_replace(fecha_limite_de_pago, '[^a-z^A-Z^0-9]', '', 'g')END::date)::TEXT  
+		ELSE CASE WHEN regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') = '' THEN NULL ELSE regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') END 
 	END AS ciclo_de_pago,
 	'$ '||round(REPLACE (REPLACE(ca.vr_cuota_producto,'.',''),',','.')::NUMERIC) AS vr_cuota_producto,
 	e.dias_mora_hoy,
 	e.rxm_proyectado,
-	round(REPLACE (REPLACE(e.pago_min_us,'.',''),',','.')::NUMERIC) AS pago_minimo,
+	'$ '||round(REPLACE (REPLACE(e.pago_min_us,'.',''),',','.')::NUMERIC) AS pago_minimo_us,
 	e.cabeza_para_mora_30,
 	e.cabeza_para_mora_60,
-	e.resultado_producto_proy,
-	e.resultado_cliente_proy,
+	CASE WHEN e.resultado_producto_proy = 'DT' THEN 'DET'
+		 WHEN e.resultado_producto_proy = 'MJ' THEN 'MEJ'
+		 WHEN e.resultado_producto_proy = 'PM' THEN 'PER'
+	END AS resultado_productoproy,
+	CASE WHEN e.resultado_cliente_proy = 'DT' THEN 'DET'
+		 WHEN e.resultado_cliente_proy = 'MJ' THEN 'MEJ'
+		 WHEN e.resultado_cliente_proy = 'PM' THEN 'PER'
+	END AS resultado_clienteproy,
 	e.rxm_proy_max,
 	e.status_resultado_accion,
 	e.rango_llamadas_efectivas,
@@ -160,7 +166,7 @@ SELECT DISTINCT
 	e.cia_actual_min,
 	e.cia_actual,
 	e.segmentacion_sfc_inicial,
-	e.obligacion_def::NUMERIC ,
+	CASE WHEN e.obligacion_def::NUMERIC IS NULL THEN 0 ELSE e.obligacion_def::NUMERIC END AS obligacion_def,
 	e.fecha_cambio_no_obligacion,
 	'$ '||REPLACE (d.valor_dcto,'.','')::NUMERIC AS valor_dcto,
 	'$ '||REPLACE (d.valor_minimo_pagar,'.','')::NUMERIC AS valor_minimo_pagar,
@@ -178,15 +184,15 @@ SELECT DISTINCT
 		WHEN REPLACE (REPLACE(e.cabeza_para_mora_60,'.',''),',','.')::NUMERIC > 0 THEN REPLACE (REPLACE(e.cabeza_para_mora_60,'.',''),',','.')::NUMERIC 
 		ELSE REPLACE (REPLACE(e.cabeza_para_mora_30,'.',''),',','.')::NUMERIC 
 	END AS congelado,
-	trim(mg.descod1) AS descod1,
-	trim(mg.descod2) AS descod2,
+    regexp_replace(trim(mg.descod1), '[^A-Z^0-9]', '', 'g') AS descod1,
+    regexp_replace(trim(mg.descod2), '[^A-Z^0-9]', '', 'g') AS descod2,
 	CASE WHEN ca.macroproducto LIKE '%HIPOTECARIO%' THEN 'CH' ELSE 'CS' END AS macro_banco,
 	concat(ca.nro_matricula,'-',ca.marca_vehiculo,'-',ca.clase_vehiculo,'-',ca.modelo) AS tipo_garantia,
 	NULL AS precastigos,
 	CASE WHEN bt.obligacion_id IS NULL THEN 'NUEVO' ELSE 'ANTIGUO' END AS tombolizacion,
 	round(REPLACE (REPLACE(ca.saldo_capital_producto,'.',''),',','.')::NUMERIC / 1000000) AS saldo_contable,
 	round(sp.sumapareto / 1000000) AS contable_pareto,
-	sf.salto_factura,
+	regexp_replace(sf.salto_factura, '[^a-z^A-Z^0-9]', '', 'g') AS salto_factura,
     CASE WHEN cpm.fecha_compromiso = '1900-01-01' THEN NULL ELSE cpm.fecha_compromiso END::date AS fecha_creacion_compromiso,
 	cpm.fecha_pago AS fecha_pago_compromiso,
 	cpm.asesor AS asesor_compromiso,

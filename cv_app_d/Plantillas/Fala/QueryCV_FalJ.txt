@@ -112,15 +112,26 @@ unicopro AS (SELECT DISTINCT deudor_id,obligacion_id,
 			 															 WHERE unidad_nombre = 'Prejuridico')
 			 									 AND unidad_nombre = 'Prejuridico'						 
 			 															 ORDER BY deudor_id),
-maxfectreest AS (SELECT DISTINCT 
-				      cuenta,
-				      max(periodo) AS maxrest 
-			     FROM cbpo_falabella.reestructuraciones 
-				 WHERE periodo >= ((SELECT max(periodo) 
-				 					FROM cbpo_falabella.reestructuraciones) - 5)
-				 GROUP BY cuenta),
+maxfectreest AS (SELECT DISTINCT cuenta,pago_minimo,max(periodo) AS maxrest 
+			     FROM cbpo_falabella.reestructuraciones GROUP BY cuenta,pago_minimo),
+reestructuraciones AS (
+SELECT DISTINCT cuenta,
+pago_minimo,
+cuota36m,
+cuota42m, 
+cuota60m,
+cuota72m, 
+periodo,
+ROW_NUMBER () OVER (PARTITION BY cuenta  ORDER BY periodo DESC) AS contador
+FROM cbpo_falabella.reestructuraciones
+WHERE periodo::date >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado = TRUE AND unidad_id = 1)),
+reestructuraciones1 AS (SELECT DISTINCT cuenta,pago_minimo,cuota36m,cuota42m,cuota60m,cuota72m,periodo FROM reestructuraciones 
+						WHERE contador = 1),
+reestructuraciones2 AS (SELECT DISTINCT cuenta,cuota36m,cuota42m,cuota60m,cuota72m,periodo FROM reestructuraciones 
+						WHERE contador = 2),			     
 sumacuotas AS (SELECT DISTINCT 
-	obligacion_id,vencto,
+	obligacion_id,
+	vencto,
 	CASE WHEN ROUND(REPLACE(cuota_vcda1,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda1,',','.')::NUMERIC) END
 	+ CASE WHEN ROUND(REPLACE(cuota_vcda2,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda2,',','.')::NUMERIC) END
 	+ CASE WHEN ROUND(REPLACE(cuota_vcda3,',','.')::NUMERIC) IS NULL THEN 0 ELSE ROUND(REPLACE(cuota_vcda3,',','.')::NUMERIC) END
@@ -143,94 +154,97 @@ sumacuotas AS (SELECT DISTINCT
 cuota_vcda7,cuota_vcda8,cuota_vcda9,cuota_vcda10,cuota_vcda11,cuota_vcda12,fecha_venc12
 ORDER BY obligacion_id,vencto),
 listarobinson AS (SELECT DISTINCT deudor_id FROM cbpo_falabella.lista_robinson),
-ajustes AS (SELECT deudor_id ,obligacion_id, max(fecha_aplicacion) AS fecha_aplicacion FROM cbpo_falabella.ajustes GROUP BY deudor_id ,obligacion_id)
-SELECT DISTINCT 
-ca.tipo_producto_asignacion,
-ca.grupo,
-CASE WHEN ca.grupo::NUMERIC = 3 THEN 'CONSUMO'
-     WHEN ca.grupo::NUMERIC = 5 THEN 'TARJETA'
-     WHEN ca.grupo::NUMERIC = 6 THEN 'SOBREJIRO'
-END || ' '|| upper(RIGHT(ca.rango,length(ca.rango)-(strpos(ca.rango,')') +1))) AS cartera,
-t.tipo_cliente,
-u.unico::TEXT ,
-CASE WHEN up.cont_up != 1 THEN '0' ELSE '1' END AS unico_pro,
-ca.obligacion_id,
-ca.deudor_id,
-ca.nombre,
-CASE WHEN ca.grupo::NUMERIC = 3 THEN 'CONSUMO'
-     WHEN ca.grupo::NUMERIC = 5 THEN 'TARJETA'
-     WHEN ca.grupo::NUMERIC = 6 THEN 'SOBREJIRO'
-END AS producto, 
-'$ ' || ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) AS saldototal,
-'$ ' || s.saldopareto AS saldo_pareto,
-'' AS segmentacion,
-REPLACE (ROUND(ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) / sp.sumaparetocartera,4) * 100||' %','.',',') AS peso,
-ca.dias_mora_asignacion::NUMERIC + (current_date - (SELECT DISTINCT min(fecha_registro) 
-													FROM cbpo_falabella.cons_asignacion 
-													WHERE asignacion_id = (SELECT asignacion_id 
-																		   FROM cbpo_falabella.asignaciones 
-																		   WHERE estado IS TRUE AND unidad_id = 1))) AS alturamora_hoy,
-'(0'||substring(ca.rango,2,2)::NUMERIC - 1||')'||' '||RIGHT(ca.rango,length(ca.rango)-(strpos(ca.rango,')') +1)) AS rango,																		   
-ROUND(ca.dias_mora_asignacion::NUMERIC)  AS dias_mora,
-ca.vencto,
-CASE 
-	WHEN mg.indicador IS NULL THEN 'SIN GESTION' 	
-	WHEN CASE 
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 2 dias'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 1 dia'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Debe pagar hoy'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Vigente'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 1 AND CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 2  THEN 'Pendiente'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago >= sc.totalcuotas THEN 'Cumplido'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago < sc.totalcuotas THEN 'Pago parcial'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
-		 END = 'Incumplido' OR 
-		 CASE 
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 2 dias'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 1 dia'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Debe pagar hoy'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Vigente'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 1 AND CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 2  THEN 'Pendiente'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago >= sc.totalcuotas THEN 'Cumplido'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago < sc.totalcuotas THEN 'Pago parcial'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
-		 END = 'Pendiente' OR 
-		 CASE 
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 2 dias'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 1 dia'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Debe pagar hoy'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Vigente'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 1 AND CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 2  THEN 'Pendiente'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago >= sc.totalcuotas THEN 'Cumplido'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago < sc.totalcuotas THEN 'Pago parcial'
-			WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
-		 END = 'Sin acuerdo' THEN 'COMPROMISO ROTO'	
-ELSE mg.indicador		 
-END AS mejor_gestion,
+ajustes AS (SELECT deudor_id ,obligacion_id, max(fecha_aplicacion) AS fecha_aplicacion FROM cbpo_falabella.ajustes GROUP BY deudor_id ,obligacion_id),
+comovamos AS (
+SELECT DISTINCT ca.idcbpo, 
+				ca.tipo_producto_asignacion,
+				ca.grupo,
+				CASE WHEN ca.grupo::NUMERIC = 3 THEN 'CONSUMO'
+				     WHEN ca.grupo::NUMERIC = 5 THEN 'TARJETA'
+				     WHEN ca.grupo::NUMERIC = 6 THEN 'SOBREGIRO'
+				END || ' '|| upper(RIGHT(REPLACE(ca.rango,'í','i'),length(REPLACE(ca.rango,'í','i'))-(strpos(REPLACE(ca.rango,'í','i'),')') +1))) AS cartera,
+				t.tipo_cliente,
+				u.unico::TEXT ,
+				CASE WHEN up.cont_up != 1 THEN '0' ELSE '1' END AS unico_pro,
+				ca.obligacion_id,
+				ca.deudor_id,
+				ca.nombre,
+				CASE WHEN ca.grupo::NUMERIC = 3 THEN 'CONSUMO'
+				     WHEN ca.grupo::NUMERIC = 5 THEN 'TARJETA'
+				     WHEN ca.grupo::NUMERIC = 6 THEN 'SOBREGIRO'
+				END AS producto, 
+				'$ ' || ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) AS saldototal,
+				'$ ' || s.saldopareto AS saldo_pareto,
+				'' AS segmentacion,
+				REPLACE (ROUND(ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) / sp.sumaparetocartera,4) * 100||' %','.',',') AS peso,
+				ca.dias_mora_asignacion::NUMERIC + (current_date - (SELECT DISTINCT min(fecha_registro) 
+																	FROM cbpo_falabella.cons_asignacion 
+																	WHERE asignacion_id = (SELECT asignacion_id 
+																						   FROM cbpo_falabella.asignaciones 
+																						   WHERE estado IS TRUE AND unidad_id = 1))) AS alturamora_hoy,
+				'(0'||substring(REPLACE(ca.rango,'í','i'),2,2)::NUMERIC - 1||')'||' '||RIGHT(REPLACE(ca.rango,'í','i'),length(REPLACE(ca.rango,'í','i'))-(strpos(REPLACE(ca.rango,'í','i'),')') +1)) AS rango,																		   
+				ROUND(ca.dias_mora_asignacion::NUMERIC)  AS dias_mora,
+				ca.vencto,
+				CASE 
+					WHEN trim(mg.indicador) IS NULL THEN 'SIN GESTION' 
+					WHEN CASE WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+							  WHEN pa.dias_mora::NUMERIC IS NULL THEN 'DETERIORO'
+						      WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'MANTENIDO'
+						 ELSE 'PAGO PARCIAL'
+						 END = 'NORMALIZADO' OR CASE WHEN pa.dias_mora = 0 THEN 'NORMALIZADO' 
+												     WHEN pa.dias_mora::NUMERIC IS NULL THEN 'DETERIORO'
+											         WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'MANTENIDO'
+											    ELSE 'PAGO PARCIAL'
+											    END = 'MANTENIDO' THEN 'NORMALIZADO'
+					WHEN CASE 
+							 WHEN pa.dias_mora = 0 THEN 1
+							 WHEN pa.dias_mora::NUMERIC IS NULL THEN 4
+						     WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 2
+					    ELSE 3
+						END > 2 AND trim(mg.indicador) = 'COMPROMISO' AND cp.fecha_pago	<  current_date THEN 'COMPROMISO ROTO'
+					WHEN CASE 
+							 WHEN pa.dias_mora = 0 THEN 1
+							 WHEN pa.dias_mora::NUMERIC IS NULL THEN 4
+						     WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 2
+					    ELSE 3
+						END > 2 AND trim(mg.indicador) = 'NEGOCIACION' AND cp.fecha_pago	<  current_date THEN 'NEGOCIACION ROTA'		
+					WHEN trim(mg.indicador) = 'NEGOCIACION' AND cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'NEGOCIACION'
+					WHEN trim(mg.indicador) = 'NEGOCIACION' AND cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'NEGOCIACION'
+					WHEN trim(mg.indicador) = 'NEGOCIACION' AND cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date < CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'NEGOCIACION'
+					WHEN trim(mg.indicador) = 'NEGOCIACION' AND cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'NEGOCIACION'	 
+					WHEN trim(mg.indicador) = 'NEGOCIACION' AND cp.fecha_compromiso IS NULL THEN 'PRESION'
+					WHEN trim(mg.indicador) = 'NEGOCIACION' AND cp.fecha_compromiso IS NOT NULL AND cp.valor >= 0 AND p.valor_pago IS NULL THEN 'NEGOCIACION ROTA'
+					WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'COMPROMISO'
+					WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'COMPROMISO'
+					WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date < CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'COMPROMISO'
+					WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'COMPROMISO'
+					WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor >= 0 AND p.valor_pago IS NULL THEN 'COMPROMISO ROTO'
+					WHEN trim(mg.indicador) = 'COMPROMISO' AND cp.fecha_compromiso IS NULL THEN 'PRESION'
+					WHEN trim(mg.indicador) <> 'COMPROMISO' AND cp.fecha_compromiso IS NULL THEN trim(mg.indicador)
+					ELSE trim(mg.indicador)
+				END AS indicador_mejor_gestion,
 mg.total_gestiones::TEXT ,
 mg.fecha_ultima_gestion,
 mg.asesor AS asesor_mejor_gestion,
 CASE WHEN cp.fecha_compromiso = '1900-01-01' THEN NULL ELSE cp.fecha_compromiso END  AS fecha_compromiso,
-CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END AS fecha_pago_compromiso,
+CASE WHEN cp.fecha_pago = '1900-01-01' THEN cp.fecha_compromiso 
+	 WHEN cp.fecha_pago IS NULL THEN CASE WHEN cp.fecha_compromiso = '1900-01-01' THEN NULL ELSE cp.fecha_compromiso END
+ELSE cp.fecha_pago	 
+END AS fecha_pago_compromiso,
 '$ ' ||cp.valor AS valor_compromiso,
 cp.asesor,
-CASE 
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NULL THEN 'Sin acuerdo'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NULL AND p.valor_pago IS NOT NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso' 
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 2 dias'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 1 dia'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Debe pagar hoy'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date <= CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Vigente'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 1 AND CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 2  THEN 'Pendiente'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago >= sc.totalcuotas THEN 'Cumplido'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago < sc.totalcuotas THEN 'Pago parcial'
-	WHEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END IS NOT NULL AND p.valor_pago IS NULL THEN 'Incumplido' 
+CASE
+	WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 2 dias'
+	WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 1 dia'
+	WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date < CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Vigente'
+	WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Debe pagar hoy'
+	WHEN cp.fecha_compromiso IS NOT NULL AND p.fecha_pago IS NULL AND current_date BETWEEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 1 AND CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 2  THEN 'Pendiente'
+	WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor = 0 AND p.valor_pago IS NOT NULL THEN 'Cumplido'
+	WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor > 0 AND p.valor_pago >= cp.valor THEN 'Cumplido'	
+	WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor >= 0 AND p.valor_pago IS NULL THEN 'Incumplido'
+	WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor > 0 AND p.valor_pago < cp.valor THEN 'Pago parcial'
+	WHEN cp.fecha_compromiso IS NULL AND p.valor_pago > 0 THEN 'Pago sin compromiso'
+	WHEN cp.fecha_compromiso IS NULL THEN 'Sin compromiso'
 END AS estado_acuerdo,
 pa.dias_mora::NUMERIC AS dias_mora_pagos,
 '$ ' || p.valor_pago AS valor_pago,
@@ -240,15 +254,17 @@ CASE WHEN ROUND(REPLACE(ca.saldo_total,',','.')::NUMERIC) - p.valor_pago <= 0 TH
 ELSE 'No' 
 END AS pago_total,
 CASE 
-	 WHEN pa.dias_mora::NUMERIC > ca.dias_mora_asignacion::NUMERIC THEN 'DETERIORO'
-     WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
-     WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'RETENIDO'
+	 WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
+	 WHEN pa.dias_mora::NUMERIC IS NULL THEN 'DETERIORO'
+     WHEN pa.dias_mora::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'MANTENIDO'
      ELSE 'PAGO PARCIAL'
 END AS nvo_status,
 ca.estado_falabella AS status_refresque, 
-CASE WHEN pa.dias_mora IS NULL OR pa.dias_mora::NUMERIC > ca.dias_refresque::NUMERIC THEN 'DETERIORO'
-     WHEN pa.dias_mora = 0 THEN 'NORMALIZADO'
-     WHEN pa.dias_mora::NUMERIC <= ca.dias_refresque::NUMERIC THEN 'RETENIDO'
+CASE 
+	 WHEN ca.dias_refresque::NUMERIC = 0 THEN 'NORMALIZADO'
+	 WHEN ca.dias_refresque::NUMERIC IS NULL THEN 'DETERIORO'
+     WHEN ca.dias_refresque::NUMERIC <= ca.dias_mora_asignacion::NUMERIC THEN 'MANTENIDO'
+     ELSE 'PAGO PARCIAL'
 END AS nvo_status_refresque,
 ca.dias_refresque::NUMERIC AS dias_mora_refresque,
 '$ '||(ROUND((sc.totalcuotas * gc.porcentaje_gasto) / 100 ) + sc.totalcuotas) AS pendiente_mas_gastos, 
@@ -310,70 +326,38 @@ END) AS valor_a_mantener_sin_gxc,
 '$ ' || (ROUND(REPLACE(ca.cuota_vcda10,',','.')::NUMERIC )) AS cv10,
 '$ ' || (ROUND(REPLACE(ca.cuota_vcda11,',','.')::NUMERIC )) AS cv11,
 '$ ' || (ROUND(REPLACE(ca.cuota_vcda12,',','.')::NUMERIC )) AS cv12,
-concat(
-'$ ',CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo 
-			        WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
-			        WHEN aj.obligacion_id IS NOT NULL THEN NULL 
-			    END,' / ',
-'$ ',CASE WHEN ca.grupo::NUMERIC = 3 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
-												WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m 
-												WHEN aj.obligacion_id IS NOT NULL THEN NULL 
-										   END
-	       WHEN ca.grupo::NUMERIC = 5 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m 
-								                WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m 
-								                WHEN aj.obligacion_id IS NOT NULL THEN NULL 
-							               END
-       END,' / ',
+concat(r1.pago_minimo,'/',r2.cuota60m,'/',
 CASE WHEN aj.obligacion_id IS NULL THEN 'Si'
 	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN 'Si'
 	 WHEN aj.obligacion_id IS NOT NULL THEN 'No'
-END)       
- AS restructuracion,
-'$ ' || (CASE WHEN 
-				CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
-					 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
-			    ELSE NULL 
-				END IS NULL THEN 
-			CASE WHEN aj.obligacion_id IS NULL THEN ras.pago_minimo
-		     	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN ras.pago_minimo
-			ELSE NULL 
-			END
-		ELSE 
-			CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
-				 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
-			ELSE NULL 
-			END
-END) AS valor_restruc,
-'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN ras.pago_minimo
-		 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN ras.pago_minimo
-		 ELSE NULL 
-END) AS pagominimo_anterior,
-'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.pago_minimo
-	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.pago_minimo
-	 ELSE NULL 
-END) AS pagominimo_actual,
-'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota36m
-	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota36m
+END) AS restructuracion,
+r1.pago_minimo AS valor_restruc,
+r1.pago_minimo AS pagominimo_actual,
+r2.cuota60m AS pagominimo_anterior,
+r1.periodo,
+r2.periodo,
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN r2.cuota36m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN r2.cuota36m
 	 ELSE NULL 
 END) AS cuota36,
-'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m
-	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota42m
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN r2.cuota42m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN r2.cuota42m
 	 ELSE NULL 
 END) AS cuota48,
-'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
-	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN r2.cuota60m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN r2.cuota60m
 	 ELSE NULL 
 END) AS cuota60,
-'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN res.cuota72m
-	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota72m
+'$ ' || (CASE WHEN aj.obligacion_id IS NULL THEN r2.cuota72m
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN r2.cuota72m
 	 ELSE NULL 
 END ) AS cuota72,
-'$ ' || (CASE WHEN ca.grupo::NUMERIC = 3 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota60m
-								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+'$ ' || (CASE WHEN ca.grupo::NUMERIC = 3 THEN CASE WHEN aj.obligacion_id IS NULL THEN r2.cuota60m
+								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN r1.cuota60m
 								 ELSE NULL 
 							END
-	 WHEN ca.grupo::NUMERIC = 5 THEN CASE WHEN aj.obligacion_id IS NULL THEN res.cuota42m
-								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.cuota60m
+	 WHEN ca.grupo::NUMERIC = 5 THEN CASE WHEN aj.obligacion_id IS NULL THEN r2.cuota42m
+								 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN r2.cuota60m
 								 ELSE NULL 
 							END
 END) AS proyectada_cargue,
@@ -381,8 +365,8 @@ CASE WHEN aj.obligacion_id IS NULL THEN 'Si'
 	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN 'Si'
 	 WHEN aj.obligacion_id IS NOT NULL THEN 'No'
 END AS aplica_ajuste,
-CASE WHEN aj.obligacion_id IS NULL THEN res.periodo
-	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN res.periodo
+CASE WHEN aj.obligacion_id IS NULL THEN r1.periodo
+	 WHEN aj.obligacion_id IS NOT NULL AND (current_date - aj.fecha_aplicacion) > 180 THEN r2.periodo
 	 ELSE NULL 
 END AS fecha,
 '$ ' || ((CASE WHEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC ) > 0 THEN ROUND(REPLACE(ca.cuota_vcda8,',','.')::NUMERIC )
@@ -508,13 +492,14 @@ LEFT JOIN cbpo_falabella.gastos_cobranza AS gc ON ca.dias_mora_asignacion::NUMER
 LEFT JOIN listarobinson AS l ON l.deudor_id = ca.deudor_id
 LEFT JOIN ajustes AS aj ON aj.obligacion_id = ca.obligacion_id
 LEFT JOIN maxfectreest AS r ON r.cuenta = ca.obligacion_id
-LEFT JOIN cbpo_falabella.reestructuraciones AS res ON res.cuenta = r.cuenta AND res.periodo = r.maxrest
-LEFT JOIN cbpo_falabella.reestructuraciones AS ras ON ras.cuenta = r.cuenta AND ras.periodo = r.maxrest - 5
 LEFT JOIN cbpo_falabella.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
 LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
+LEFT JOIN reestructuraciones1 AS r1 ON r1.cuenta = ca.obligacion_id
+LEFT JOIN reestructuraciones2 AS r2 ON r2.cuenta = ca.obligacion_id
 WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_asignacion WHERE unidad_nombre = 'Prejuridico')
 AND ca.asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado IS TRUE  AND unidad_id = 1)
 AND ca.unidad_nombre = 'Prejuridico'
 AND u.unidad_id = 1
----AND ca.deudor_id = '20940669'
-ORDER BY ca.deudor_id;
+---AND ca.deudor_id = '79889964'
+ORDER BY ca.idcbpo)
+SELECT DISTINCT * FROM comovamos;

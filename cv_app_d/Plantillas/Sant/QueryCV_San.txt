@@ -62,10 +62,23 @@ rangomes4 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas W
 rangomes3 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas WHERE EXTRACT(MONTH FROM mes::date) = EXTRACT (MONTH FROM current_date) - 3 ),
 rangomes2 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas WHERE EXTRACT(MONTH FROM mes::date) = EXTRACT (MONTH FROM current_date) - 2 ),
 rangomes1 AS (SELECT credito,rango_mora_final FROM cbpo_santander.tmp_asig_pas WHERE EXTRACT(MONTH FROM mes::date) = EXTRACT (MONTH FROM current_date) - 1 ),
-saldototalentidad AS (SELECT DISTINCT unidad,deudor_id,sum(regexp_replace(capital, '[^0-9]', '', 'g')::NUMERIC)AS saldoparetoent FROM cbpo_santander.cons_asignacion WHERE fecha_registro = (SELECT DISTINCT max(fecha_registro ) FROM cbpo_santander.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_santander.asignaciones WHERE estado IS TRUE )) GROUP BY deudor_id,unidad),
-unicos AS (SELECT CASE WHEN ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY c.deudor_id, c.unidad) > 1 THEN 0 ELSE  ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY deudor_id, unidad) END AS orden, c.deudor_id ,c.unidad ,c.obligacion_id 
-FROM cbpo_santander.cons_asignacion AS c 
-WHERE asignacion_id = (SELECT DISTINCT a.asignacion_id FROM cbpo_santander.asignaciones AS a WHERE estado = TRUE)) 
+saldototalentidad AS (SELECT DISTINCT unidad,
+                                      deudor_id,
+                                      sum(regexp_replace(capital, '[^0-9]', '', 'g')::NUMERIC)AS saldoparetoent 
+                      FROM cbpo_santander.cons_asignacion 
+                      WHERE fecha_registro = (SELECT DISTINCT max(fecha_registro ) 
+                                              FROM cbpo_santander.cons_asignacion 
+                                              WHERE asignacion_id = (SELECT asignacion_id 
+                                                                     FROM cbpo_santander.asignaciones 
+                                                                     WHERE estado IS TRUE )) 
+                      GROUP BY deudor_id,unidad)/*,
+unicos AS (SELECT DISTINCT 
+				CASE WHEN ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY c.deudor_id, c.unidad) > 1 THEN 0 
+				     ELSE  ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY deudor_id, unidad) 
+				END AS orden, c.deudor_id ,c.unidad ,c.obligacion_id 
+		   FROM cbpo_santander.cons_asignacion AS c 
+		   WHERE asignacion_id = (SELECT DISTINCT a.asignacion_id FROM cbpo_santander.asignaciones AS a WHERE estado = TRUE)
+		   AND deudor_id = '93286243')*/ 
 SELECT DISTINCT 
 	ca.unidad AS entidad,
 	ca.abogado,
@@ -74,7 +87,7 @@ SELECT DISTINCT
 	ca.solicitud,
 	ca.obligacion_id,
 	ca.deudor_id,
-	u.orden AS unico, 
+	u.unico , 
 	ca.nombre,
 	'$ '||regexp_replace(ca.capital, '[^0-9]', '', 'g')::NUMERIC AS capital ,
 	a.dias_mora_corte AS dias_mora,
@@ -144,7 +157,7 @@ SELECT DISTINCT
 	pc.canal AS canal_protocolo,
 	REPLACE(REPLACE(pc.texto_protocolo,'(mes)',to_char(current_date, 'TMMonth')),'dd-mm-aaaa',ca.fecha_corte||'/'||EXTRACT (MONTH FROM current_date)||'/'||EXTRACT (YEAR FROM current_date)) AS texto_protocolo
 FROM cbpo_santander.cons_asignacion AS ca
-INNER JOIN unicos AS u ON u.obligacion_id = ca.obligacion_id 
+LEFT JOIN cbpo_santander.unicos AS u ON u.obligacion_id = ca.obligacion_id 
 LEFT JOIN saldototalentidad AS se ON se.deudor_id = ca.deudor_id AND se.unidad = ca.unidad
 LEFT JOIN cbpo_santander.actualizacion AS a ON a.operacion = ca.obligacion_id
 LEFT JOIN cbpo_santander.alivios AS al ON al.credito = ca.obligacion_id

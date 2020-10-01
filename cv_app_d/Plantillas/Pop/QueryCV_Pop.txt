@@ -49,11 +49,11 @@ basemejorgestion AS (SELECT DISTINCT
 					  a.ultimo_alo,b.indicador AS ind_m1,c.indicador AS ind_m2,d.indicador AS ind_m3,e.indicador AS ind_m4,
 					  CASE WHEN i.contactability = 0 THEN 'NO CONTACTO' ELSE 'CONTACTO' END AS contactability, a.primer_alo
 					  FROM base AS bs
-					  LEFT JOIN consa	AS a ON RIGHT(a.deudor_id,length(a.deudor_id)-1) = bs.deudor_id					
-					  LEFT JOIN consb AS b ON RIGHT(b.deudor_id,length(b.deudor_id)-1) = bs.deudor_id
-					  LEFT JOIN consc AS c ON RIGHT(c.deudor_id,length(c.deudor_id)-1) = bs.deudor_id
-					  LEFT JOIN consd AS d ON RIGHT(d.deudor_id,length(d.deudor_id)-1) = bs.deudor_id
-					  LEFT JOIN conse AS e ON RIGHT(e.deudor_id,length(e.deudor_id)-1) = bs.deudor_id
+					  LEFT JOIN consa AS a ON a.deudor_id = bs.deudor_id					
+					  LEFT JOIN consb AS b ON b.deudor_id = bs.deudor_id
+					  LEFT JOIN consc AS c ON c.deudor_id = bs.deudor_id
+					  LEFT JOIN consd AS d ON d.deudor_id = bs.deudor_id
+					  LEFT JOIN conse AS e ON e.deudor_id = bs.deudor_id
 					  LEFT JOIN bi_snap.management_indicators AS i ON i.indicator_desc = trim(a.indicador)
 					  GROUP BY bs.deudor_id,a.mes,a.anio,a.indicador,a.repeticion, 
 							a.llamadas,a.sms,a.correos,a.gescall,a.whatsapp,a.no_contacto,a.fecha_gestion,
@@ -65,17 +65,17 @@ basetelpos AS (SELECT ROW_NUMBER () OVER (PARTITION BY tpf.deudor_id
 			   FROM cbpo_popular.telefonos_positivos AS tpf 
 			   WHERE deudor_id != '' 
 			   ORDER BY tpf.deudor_id,contador),
-telefonospositivos AS (SELECT RIGHT(deudor_id,length(deudor_id)-1) AS deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),
+telefonospositivos AS (SELECT deudor_id AS deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),
 basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY c.deudor_id 
 											   ORDER BY c.fecha_compromiso DESC , c.fecha_pago DESC ,c.valor DESC ,c.asesor DESC) AS contador,	
-						RIGHT(c.deudor_id,length(c.deudor_id)-1) AS deudor,
+						c.deudor_id AS deudor,
 						c.valor,
 						c.fecha_compromiso,
 						c.fecha_pago,
 						c.asesor,
 						u.obligacion_id
 					FROM cbpo_popular.compromisos AS c
-					INNER JOIN cbpo_popular.unicos AS u ON u.deudor_id = RIGHT(c.deudor_id,length(c.deudor_id)-1)
+					INNER JOIN cbpo_popular.unicos AS u ON u.deudor_id = c.deudor_id
 					WHERE fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado IS TRUE )),
 compromisos AS (SELECT * 
 				FROM basecompromisos 
@@ -97,16 +97,16 @@ cicloinicio AS (SELECT DISTINCT a.saldo_capital,c.obligacion_id, a.dia_de_corte,
 FROM ciclo AS c INNER JOIN cbpo_popular.cons_asignacion AS a ON a.obligacion_id = c.obligacion_id AND c.fechamin = a.fecha_registro),
 sumapagos AS (SELECT DISTINCT obligacion_id,sum(pago_valor ) AS valor FROM cbpo_popular.pagos AS p WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE )  GROUP BY obligacion_id),
 cuentapagos AS (SELECT DISTINCT obligacion_id ,count(obligacion_id) AS cantidad_pagos FROM cbpo_popular.pagos AS p WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE )  GROUP BY obligacion_id),
-actual AS (SELECT DISTINCT obligacion_id,dias_en_mora_inicial::NUMERIC ,CASE  WHEN dias_en_mora_inicial::NUMERIC = 0 THEN '0'
-																	WHEN dias_en_mora_inicial::NUMERIC >= 1 AND dias_en_mora_inicial::NUMERIC <= 30 THEN '1 A 30'
-																	WHEN dias_en_mora_inicial::NUMERIC >= 31 AND dias_en_mora_inicial::NUMERIC <= 60 THEN '31 A 60'
-																	WHEN dias_en_mora_inicial::NUMERIC >= 61 AND dias_en_mora_inicial::NUMERIC <= 90 THEN '61 A 90'
-																	WHEN dias_en_mora_inicial::NUMERIC >= 91 AND dias_en_mora_inicial::NUMERIC <= 120 THEN '91 A 120'
-																	WHEN dias_en_mora_inicial::NUMERIC >= 121 AND dias_en_mora_inicial::NUMERIC <= 150 THEN '121 A 150'
-																	WHEN dias_en_mora_inicial::NUMERIC >= 151 AND dias_en_mora_inicial::NUMERIC <= 180 THEN '151 A 180'
-																	WHEN dias_en_mora_inicial::NUMERIC >= 181 AND dias_en_mora_inicial::NUMERIC <= 360 THEN '181 A 360'
-																	WHEN dias_en_mora_inicial::NUMERIC > 360 THEN '> 360'
-																END AS rango_mora_final
+actual AS (SELECT DISTINCT obligacion_id,
+						   dias_en_mora_inicial::NUMERIC ,CASE  WHEN dias_en_mora_inicial::NUMERIC = 0 THEN '0'
+																WHEN dias_en_mora_inicial::NUMERIC >= 1 AND dias_en_mora_inicial::NUMERIC <= 30 THEN '1 A 30'
+																WHEN dias_en_mora_inicial::NUMERIC >= 31 AND dias_en_mora_inicial::NUMERIC <= 60 THEN '31 A 60'
+																WHEN dias_en_mora_inicial::NUMERIC >= 61 AND dias_en_mora_inicial::NUMERIC <= 90 THEN '61 A 90'
+																WHEN dias_en_mora_inicial::NUMERIC >= 91 AND dias_en_mora_inicial::NUMERIC <= 120 THEN '91 A 120'
+																WHEN dias_en_mora_inicial::NUMERIC >= 121 AND dias_en_mora_inicial::NUMERIC <= 150 THEN '121 A 150'
+																WHEN dias_en_mora_inicial::NUMERIC >= 181 AND dias_en_mora_inicial::NUMERIC <= 360 THEN '181 A 360'
+																WHEN dias_en_mora_inicial::NUMERIC > 360 THEN '> 360'
+														  END AS rango_mora_final
 FROM cbpo_popular.cons_asignacion WHERE fecha_registro = (SELECT max(fecha_registro ) FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE))
 AND asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)),
 sumapareto AS (SELECT deudor_id,sum(REPLACE(valor_en_mora,',','.')::NUMERIC ) AS saldo_pareto
@@ -124,25 +124,20 @@ baseretiros AS (SELECT obligacion_id,min(fecha_registro) AS fecha_retiro
 				AND estado = 'Retirado'
 				GROUP BY obligacion_id),
 baseantiguos AS (SELECT DISTINCT obligacion_id FROM cbpo_popular.cons_asignacion WHERE fecha_registro < (SELECT DISTINCT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE)),
-/*paretoporproducto AS (SELECT DISTINCT deudor_id,estado_actual_cartera, sum(REPLACE(valor_en_mora,',','.')::NUMERIC ) sumaparetoprod FROM cbpo_popular.cons_asignacion
-						WHERE fecha_registro = (SELECT max(fecha_registro ) FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE))
-						AND asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)
-						AND deudor_id = '73125386' 
-						GROUP BY estado_actual_cartera,deudor_id),*/
 fecret AS (SELECT DISTINCT obligacion_id,MAX(fecha_registro) AS fecha_retiro_casa
-FROM cbpo_popular.cons_asignacion 
-WHERE fecha_registro < (SELECT max(fecha_registro ) FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE))
-AND asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)
-AND casa_actual = 'COBRANDO'
-GROUP BY obligacion_id)
+			FROM cbpo_popular.cons_asignacion 
+			WHERE fecha_registro < (SELECT max(fecha_registro ) FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE))
+			AND asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)
+			AND casa_actual = 'COBRANDO'
+			GROUP BY obligacion_id)
 SELECT DISTINCT 
 	CASE 
-		WHEN ca.entidad = 'TDCEXPRES' AND ci.dias_en_mora_inicial::NUMERIC > 60 THEN 'Avanzada'
-		WHEN ca.entidad = 'TDCEXPRES' AND ci.dias_en_mora_inicial::NUMERIC <= 60 THEN 'Vigente'
+		WHEN ca.entidad = 'TDCEXPRES' AND ca.dias_en_mora_inicial::NUMERIC > 60 THEN 'Avanzada'
+		WHEN ca.entidad = 'TDCEXPRES' AND ca.dias_en_mora_inicial::NUMERIC <= 60 THEN 'Vigente'
 		WHEN ca.entidad = 'MASIVOS' THEN 'Tradicional' 
 	END AS tipo_bpo,
-	concat('1',ca.obligacion_id) AS llave,
-	ca.entidad, 
+	ca.obligacion_id AS llave,
+	ca.entidad,
 	u.unico::TEXT,
 	cop.nombre::TEXT AS nombre_prod,
     cop.lin_descripcion::TEXT , 
@@ -154,8 +149,8 @@ SELECT DISTINCT
 	ca.fecha_de_proceso::date AS inicio_corte,
 	ca.fecha_desembolso::date  AS fecha_desembolso,
 	ci.dia_de_corte::NUMERIC AS ciclo,
-	ci.dias_en_mora_inicial::NUMERIC ,
-	ca.dias_en_mora_inicial::NUMERIC AS dias_en_mora_final,
+	ca.dias_en_mora_inicial::NUMERIC ,
+	ca.dias_mora_actual::NUMERIC AS dias_en_mora_final,
 	'$ '||cpm.valor AS valor_compromiso,
     CASE WHEN cpm.fecha_compromiso = '1900-01-01' THEN NULL ELSE cpm.fecha_compromiso END::date AS fecha_creacion_compromiso,
 	cpm.fecha_pago AS fecha_pago_compromiso,
@@ -171,7 +166,6 @@ SELECT DISTINCT
 	END AS estado,
 	'$ '||ROUND(REPLACE(ca.valor_en_mora,',','.')::NUMERIC) AS valmora,
 	'$ '||ROUND(p.saldo_pareto) AS valmora_pareto,
----	REPLACE(concat(round(CASE WHEN pp.sumaparetoprod = 0 THEN 0 ELSE REPLACE(ca.valor_en_mora,',','.')::NUMERIC / pp.sumaparetoprod END,2),'%'),'.',',') AS porcentaje_peso_mora, 
 	'$ '||ROUND(REPLACE(ci.saldo_capital,',','.')::NUMERIC) AS capital_inicial,
 	'$ '||stp.total_pareto AS  saltotalpareto,
 	'$ '||ROUND(REPLACE(ca.pago_minimo,',','.')::NUMERIC) AS pago_minimo,
@@ -209,26 +203,25 @@ SELECT DISTINCT
     mg.ultimo_alo::date,
     tlp.fec_ultima_marcacion AS fec_ult_marc_tel_pos,
     tlp.telefono::TEXT  AS tel_positivo,
+    ca.casa_inicial, 
     ca.casa_actual,
     fr.fecha_retiro_casa
 FROM cbpo_popular.cons_asignacion AS ca
 LEFT join fecret AS fr ON fr.obligacion_id = ca.obligacion_id 
 LEFT JOIN cbpo_popular.tipo_cliente AS t ON t.deudor_id = ca.deudor_id
 LEFT JOIN cicloinicio AS ci ON ci.obligacion_id = ca.obligacion_id
-LEFT JOIN sumapagos AS sp ON sp.obligacion_id = 1||ca.obligacion_id
+LEFT JOIN sumapagos AS sp ON sp.obligacion_id = ca.obligacion_id
 LEFT JOIN actual AS a ON a.obligacion_id = ca.obligacion_id
 LEFT JOIN sumapareto AS p ON p.deudor_id = ca.deudor_id 
 LEFT JOIN baseretiros AS br ON br.obligacion_id = ca.obligacion_id
 LEFT JOIN baseantiguos AS ba ON ba.obligacion_id = ca.obligacion_id
 LEFT JOIN totalpareto AS stp ON  stp.deudor_id = ca.deudor_id
 LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = ca.deudor_id
-LEFT JOIN cbpo_popular.mejor_gestion_dia AS md ON  RIGHT(md.deudor_id,length(md.deudor_id)-1) = ca.deudor_id
+LEFT JOIN cbpo_popular.mejor_gestion_dia AS md ON  md.deudor_id = ca.deudor_id
 LEFT JOIN telefonospositivos AS tlp ON tlp.deudor_id = ca.deudor_id
-----LEFT JOIN paretoporproducto AS pp ON pp.deudor_id = ca.deudor_id 
-LEFT JOIN cuentapagos AS cp ON cp.obligacion_id = 1||ca.obligacion_id
+LEFT JOIN cuentapagos AS cp ON cp.obligacion_id = ca.obligacion_id
 LEFT JOIN compromisos AS cpm ON cpm.obligacion_id = ca.obligacion_id
 LEFT JOIN cbpo_popular.unicos AS u ON u.obligacion_id = ca.obligacion_id
 LEFT JOIN cbpo_popular.codificacion_productos AS cop ON cop.lin_linea_credito = ca.producto 
-WHERE ca.fecha_registro = (SELECT max(fecha_registro ) FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE))
-AND ca.asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)
----AND concat('1',ca.obligacion_id) LIKE '%173125386-4826%';
+WHERE ca.fecha_registro = (SELECT DISTINCT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE)
+AND ca.asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE);

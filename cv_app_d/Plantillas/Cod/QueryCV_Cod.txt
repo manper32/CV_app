@@ -1,0 +1,250 @@
+WITH idasignacion AS (SELECT asignacion_id FROM cbpo_codensa.asignaciones WHERE estado = TRUE),
+deleteunicos AS (DELETE FROM cbpo_codensa.unicos),
+consunicos AS (SELECT DISTINCT obligacion_id,deudor_id
+				FROM cbpo_codensa.cons_asignacion 
+				WHERE asignacion_id = (SELECT asignacion_id FROM idasignacion)
+				AND obligacion_id IS NOT NULL 
+				AND deudor_id IS NOT NULL 
+				AND obligacion_id <> ''
+				AND deudor_id <> ''
+				ORDER BY deudor_id),
+insertunicos AS (INSERT INTO cbpo_codensa.unicos 
+				 SELECT obligacion_id,deudor_id,
+				 CASE WHEN ROW_NUMBER () OVER (PARTITION BY deudor_id ORDER BY deudor_id DESC ) > 1 THEN 0 ELSE 1 END AS unico 
+				 FROM consunicos),
+deletetipocliente AS (DELETE FROM cbpo_codensa.tipo_cliente),
+constipocliente as (select distinct oa.obligacion_id,o.deudor_id
+					FROM cbpo_codensa.obligaciones_asignacion as oa
+					inner join cbpo_codensa.obligaciones as o ON o.obligacion_id = oa.obligacion_id
+					WHERE asignacion_id = (SELECT asignacion_id FROM idasignacion)),
+inserttipocliente AS (INSERT INTO cbpo_codensa.tipo_cliente
+					  SELECT deudor_id,
+			          CASE WHEN count(deudor_id) = 1 THEN 'MONO'
+		              ELSE 'MULTI' END AS tipo_cliente		
+				      FROM constipocliente GROUP BY deudor_id),
+baseinicial AS (SELECT DISTINCT obligacion_id ,min(fecha_registro ) AS minfec 
+					 FROM cbpo_codensa.cons_asignacion
+					 WHERE asignacion_id = (SELECT asignacion_id FROM idasignacion)
+					 GROUP BY obligacion_id),
+	 binicial AS (SELECT DISTINCT c.* FROM cbpo_codensa.cons_asignacion AS c 
+				  INNER JOIN baseinicial AS bi ON bi.obligacion_id = c.obligacion_id
+				  AND bi.minfec = c.fecha_registro),
+	 pareto AS (SELECT sum(campo13::NUMERIC ) AS saldo_pareto,deudor_id FROM binicial GROUP BY deudor_id),			  
+	 baseactual AS (SELECT DISTINCT obligacion_id ,max(fecha_registro ) AS maxfec 
+	 				FROM cbpo_codensa.cons_asignacion 
+	 				WHERE asignacion_id = (SELECT asignacion_id FROM idasignacion)
+	 				GROUP BY obligacion_id),
+	 bactual AS (SELECT DISTINCT c.* FROM cbpo_codensa.cons_asignacion AS c 
+				 INNER JOIN baseactual AS ba ON ba.obligacion_id = c.obligacion_id 
+				 AND ba.maxfec = c.fecha_registro),
+	 sumapagos AS (SELECT DISTINCT sum(pago_valor) AS valorpago,max(pago_fecha) AS fechapago ,
+	 			   deudor_id 
+				   FROM cbpo_codensa.pagos 
+				   WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_codensa.asignaciones WHERE estado = TRUE) 
+				   GROUP BY deudor_id),
+base AS (SELECT DISTINCT o.deudor_id 
+			  FROM cbpo_codensa.obligaciones_asignacion AS oa 
+			  INNER JOIN cbpo_codensa.obligaciones AS o 
+			  ON o.obligacion_id = oa.obligacion_id
+			  WHERE oa.asignacion_id = (SELECT asignacion_id FROM idasignacion)),
+consa AS (SELECT m.* 
+		  FROM cbpo_codensa.mejor_gestion AS m 
+		  LEFT JOIN base AS b 
+		  ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date )),
+consb AS (SELECT m.deudor_id,indicador 
+	      FROM cbpo_codensa.mejor_gestion AS m 
+	      LEFT JOIN base AS b 
+	      ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
+consc AS (SELECT m.deudor_id,indicador 
+          FROM cbpo_codensa.mejor_gestion AS m 
+          LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+          WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
+consd AS (SELECT m.deudor_id,indicador 
+		  FROM cbpo_codensa.mejor_gestion AS m 
+		  LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+		  WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
+conse AS (SELECT m.deudor_id,indicador 
+	      FROM cbpo_codensa.mejor_gestion AS m 
+	      LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
+	      WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
+basemejorgestion AS (SELECT DISTINCT bs.deudor_id,
+							a.mes, 
+							a.anio, 
+							a.indicador, 
+							CASE WHEN a.repeticion IS NULL THEN 0 ELSE a.repeticion END AS repeticion, 
+							CASE WHEN a.llamadas IS NULL THEN 0 ELSE a.llamadas END AS llamadas, 
+							CASE WHEN a.sms IS NULL THEN 0 ELSE a.sms END AS sms, 
+							CASE WHEN a.correos IS NULL THEN 0 ELSE a.correos END AS correos, 
+							CASE WHEN a.gescall IS NULL THEN 0 ELSE a.gescall END AS gescall, 
+					  		CASE WHEN a.whatsapp IS NULL THEN 0 ELSE a.whatsapp END  AS whatsapp,
+					  		CASE WHEN a.no_contacto IS NULL THEN 0 ELSE a.no_contacto END AS no_contacto,
+					  		CASE WHEN a.llamadas IS NULL THEN 0 ELSE a.llamadas END +
+					  		CASE WHEN a.sms IS NULL THEN 0 ELSE a.sms END +
+					  		CASE WHEN a.correos IS NULL THEN 0 ELSE a.correos END +
+					  		CASE WHEN a.gescall IS NULL THEN  0 ELSE a.gescall END +
+					  		CASE WHEN a.whatsapp IS NULL THEN 0 ELSE a.whatsapp END +
+					  		CASE WHEN a.no_contacto IS NULL THEN  0 ELSE a.no_contacto END AS total_gestiones, 
+					  		a.fecha_gestion, CASE WHEN a.visitas IS NULL THEN 0 ELSE a.visitas END AS visitas , a.phone, a.asesor,
+					  		a.fecha_primer_gestion, a.fecha_ultima_gestion, 
+					        a.ultimo_alo,b.indicador AS ind_m1,c.indicador AS ind_m2,d.indicador AS ind_m3,e.indicador AS ind_m4,i.contactability 
+					  FROM base AS bs
+					  LEFT JOIN consa	AS a ON a.deudor_id = bs.deudor_id					
+					  LEFT JOIN consb AS b ON b.deudor_id = bs.deudor_id
+					  LEFT JOIN consc AS c ON c.deudor_id = bs.deudor_id
+					  LEFT JOIN consd AS d ON d.deudor_id = bs.deudor_id
+					  LEFT JOIN conse AS e ON e.deudor_id = bs.deudor_id
+					  LEFT JOIN bi_snap.management_indicators AS i ON i.indicator_desc = trim(a.indicador)
+					  GROUP BY bs.deudor_id,a.mes,a.anio,a.indicador,a.repeticion, 
+							a.llamadas,a.sms,a.correos,a.gescall,a.whatsapp,a.no_contacto,a.fecha_gestion,
+							a.visitas, a.phone, a.asesor, a.fecha_primer_gestion, a.fecha_ultima_gestion, 
+					  		a.ultimo_alo,b.indicador,c.indicador,d.indicador,e.indicador,i.contactability),
+baseantiguos AS (SELECT DISTINCT obligacion_id 
+				 FROM cbpo_codensa.cons_asignacion 
+				 WHERE fecha_registro < (SELECT fecha_apertura FROM cbpo_codensa.asignaciones WHERE estado = TRUE )),
+basetelpos AS (SELECT ROW_NUMBER () OVER (PARTITION BY tpf.deudor_id 
+										  ORDER BY tpf.fec_ultima_marcacion DESC , 
+										           tpf.marcaciones DESC ,
+										           tpf.deudor_id DESC ,
+										           tpf.telefono DESC) AS contador,
+			   tpf.deudor_id,tpf.fec_ultima_marcacion,tpf.telefono,tpf.marcaciones 
+			   FROM cbpo_codensa.telefonos_positivos AS tpf 
+			   WHERE deudor_id != '' 
+			   ORDER BY tpf.deudor_id,contador),			  
+telefonospositivos AS (SELECT deudor_id,fec_ultima_marcacion,telefono FROM basetelpos WHERE contador = 1),
+basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY obligacion_id 
+											   ORDER BY fecha_compromiso DESC ,
+											            fecha_pago DESC ,
+											            valor DESC ,
+											            asesor DESC) AS contador,	
+						obligacion_id,
+						valor,
+						fecha_compromiso,
+						fecha_pago,
+						asesor 
+					FROM cbpo_codensa.compromisos 
+					WHERE obligacion_id != ''
+					AND fecha_compromiso >= (SELECT fecha_apertura FROM cbpo_codensa.asignaciones WHERE estado = TRUE )),
+compromisos AS (SELECT * FROM basecompromisos WHERE contador = 1)
+SELECT bi.deudor_id AS identificacion,
+	   bi.obligacion_id AS id_cliente,
+	   bi.campo3 AS nombre,
+	   bi.campo7 AS producto,
+	   u.unico AS cliente,
+	   bi.campo8::NUMERIC AS dias_inicial,
+	   CASE 
+	   		WHEN bi.campo8::NUMERIC = 0 THEN 'Al dia'
+	   		WHEN bi.campo8::NUMERIC > 0 AND bi.campo8::NUMERIC <= 30 THEN '1 a 30'
+	   		WHEN bi.campo8::NUMERIC > 30 AND bi.campo8::NUMERIC <= 30 THEN '31 a 60'
+	   		WHEN bi.campo8::NUMERIC > 60 AND bi.campo8::NUMERIC <= 90 THEN '61 a 90'
+	   		WHEN bi.campo8::NUMERIC > 90 AND bi.campo8::NUMERIC <= 120 THEN '91 a 120'
+	   		WHEN bi.campo8::NUMERIC > 120 AND bi.campo8::NUMERIC <= 150 THEN '121 a 150'
+	   		WHEN bi.campo8::NUMERIC > 150 AND bi.campo8::NUMERIC <= 180 THEN '151 a 180'
+	   		WHEN bi.campo8::NUMERIC > 180 AND bi.campo8::NUMERIC <= 210 THEN '181 a 210'
+	   		WHEN bi.campo8::NUMERIC > 210  THEN '> a 210'
+	   END AS franja_mora_inicial,
+	   ba.campo8::NUMERIC AS dias_actual,
+	   CASE 
+	   		WHEN ba.campo8::NUMERIC = 0 THEN 'Al dia'
+	   		WHEN ba.campo8::NUMERIC > 0 AND ba.campo8::NUMERIC <= 30 THEN '1 a 30'
+	   		WHEN ba.campo8::NUMERIC > 30 AND ba.campo8::NUMERIC <= 30 THEN '31 a 60'
+	   		WHEN ba.campo8::NUMERIC > 60 AND ba.campo8::NUMERIC <= 90 THEN '61 a 90'
+	   		WHEN ba.campo8::NUMERIC > 90 AND ba.campo8::NUMERIC <= 120 THEN '91 a 120'
+	   		WHEN ba.campo8::NUMERIC > 120 AND ba.campo8::NUMERIC <= 150 THEN '121 a 150'
+	   		WHEN ba.campo8::NUMERIC > 150 AND ba.campo8::NUMERIC <= 180 THEN '151 a 180'
+	   		WHEN ba.campo8::NUMERIC > 180 AND ba.campo8::NUMERIC <= 210 THEN '181 a 210'
+	   		WHEN ba.campo8::NUMERIC > 210  THEN '> a 210'
+	   END AS franja_mora_actual,	   
+	   '$ '||round(bi.campo14::NUMERIC) AS mora,
+	   '$ '||round(bi.campo22::NUMERIC) AS inteses,
+	   '$ '||round(bi.campo23::NUMERIC) AS inteses_mo, 
+	   '$ '||round(bi.campo14::NUMERIC + bi.campo22::NUMERIC + bi.campo23::NUMERIC ) AS saldo_mora,
+	   '$ '||round(bi.campo12::NUMERIC) AS total,
+	   '$ '||round(bi.campo13::NUMERIC) AS saldo_capital,
+	   '$ '||round(pt.saldo_pareto) AS saldo_pareto,
+	   CASE 
+	   		WHEN pt.saldo_pareto > 0 AND pt.saldo_pareto <= 700000 THEN '1.  0 MM a 0,7 MM'
+	   		WHEN pt.saldo_pareto > 700000 AND pt.saldo_pareto <= 1100000 THEN '2.  0,7 MM a 1,1 MM'
+	   		WHEN pt.saldo_pareto > 1100000 AND pt.saldo_pareto <= 2000000 THEN '3.  1,1 MM a 2 MM'
+	   		WHEN pt.saldo_pareto > 2000000 AND pt.saldo_pareto <= 4000000 THEN '4.  2 MM a 4 MM'
+	   		WHEN pt.saldo_pareto > 4000000 AND pt.saldo_pareto <= 6000000 THEN '5.  4 MM a 6 MM'
+	   		WHEN pt.saldo_pareto > 6000000 AND pt.saldo_pareto <= 8000000 THEN '6.  6 MM a 8 MM'
+	   		WHEN pt.saldo_pareto > 8000000 AND pt.saldo_pareto <= 10000000 THEN '7.  8 MM a 10 MM'
+	   		WHEN pt.saldo_pareto > 10000000 AND pt.saldo_pareto <= 12000000 THEN '8.  10 MM a 12 MM'
+	   		WHEN pt.saldo_pareto > 12000000 THEN '9.  12 MM a 14 MM'
+	   END	AS rango_saldo,
+	   LEFT(trim(RIGHT(trim(bi.campo35),15)),2) AS ci,
+	   t.tipo_cliente,
+	   CASE WHEN a.obligacion_id IS NULL THEN 'Nuevo' ELSE 'Antiguo' END AS nuevo_antiguo,
+	   al.status AS alivios,
+	   '$ '||round(sp.valorpago) AS pago_cliente,
+	   sp.fechapago,
+	   CASE	   
+	   	  WHEN mg.fecha_primer_gestion IS NULL AND sp.fechapago IS NULL THEN NULL 	
+	   	  WHEN sp.fechapago IS NOT NULL AND  mg.fecha_primer_gestion IS NULL THEN 'NO'	
+	   	  WHEN sp.fechapago < mg.fecha_primer_gestion THEN 'NO'
+	   	  WHEN sp.fechapago >= mg.fecha_primer_gestion THEN 'SI'
+	   END AS paga_paga_o_no,
+	   '$ '||CASE 
+	   	   WHEN round(sp.valorpago::NUMERIC ) >= round(bi.campo14::NUMERIC + bi.campo20::NUMERIC + bi.campo22::NUMERIC ) THEN round(bi.campo14::NUMERIC + bi.campo20::NUMERIC + bi.campo22::NUMERIC )
+	   	   ELSE round(sp.valorpago::NUMERIC )
+	   END AS pago_real,
+	   ba.estado AS actualizacion_diaria,
+	   '$ '||cp.valor AS valor_compromiso,
+	   cp.fecha_compromiso,
+	   cp.fecha_pago AS fecha_pago_compromiso,
+	   trim(cp.asesor) AS asesor_compromiso,
+		CASE
+			WHEN cp.fecha_compromiso IS NOT NULL AND sp.fechapago IS NULL AND current_date + 2 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 2 dias'
+			WHEN cp.fecha_compromiso IS NOT NULL AND sp.fechapago IS NULL AND current_date + 1 = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Falta 1 dia'
+			WHEN cp.fecha_compromiso IS NOT NULL AND sp.fechapago IS NULL AND current_date < CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Vigente'
+			WHEN cp.fecha_compromiso IS NOT NULL AND sp.fechapago IS NULL AND current_date = CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END THEN 'Debe pagar hoy'
+			WHEN cp.fecha_compromiso IS NOT NULL AND sp.fechapago IS NULL AND current_date BETWEEN CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 1 AND CASE WHEN cp.fecha_pago = '1900-01-01' THEN NULL ELSE cp.fecha_pago END + 2  THEN 'Pendiente'
+			WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor = 0 AND sp.valorpago IS NOT NULL THEN 'Cumplido'
+			WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor > 0 AND sp.valorpago >= cp.valor THEN 'Cumplido'	
+			WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor >= 0 AND sp.valorpago IS NULL THEN 'Incumplido'
+			WHEN cp.fecha_compromiso IS NOT NULL AND cp.valor > 0 AND sp.valorpago < cp.valor THEN 'Pago parcial'
+			WHEN cp.fecha_compromiso IS NULL AND sp.valorpago > 0 THEN 'Pago sin compromiso'
+			WHEN cp.fecha_compromiso IS NULL THEN 'Sin compromiso'
+		END AS estado_acuerdo,	   
+	   mg.ind_m4,
+       mg.ind_m3,
+       mg.ind_m2,
+       mg.ind_m1,
+	   mg.indicador AS indicador_mejor_gestion, 
+	   mg.fecha_gestion AS fecha_mejor_gestion,
+	   mg.phone::TEXT AS telefono_mejor_gestion,
+	   mg.asesor AS asesor_mejor_gestion,
+       CASE WHEN mg.contactability = 0 THEN 'NO CONTACTO'
+       	    WHEN mg.contactability > 0 THEN 'CONTACTO'
+       	    WHEN mg.contactability IS NULL THEN 'NO CONTACTO'
+       END AS tipo_contacto,	    
+	   mg.fecha_primer_gestion,
+	   mg.fecha_ultima_gestion,
+	   md.indicador AS indicador_mejor_gestion_hoy,
+	   md.asesor AS asesor_mejor_gestion_hoy, 
+	   mg.repeticion, 
+	   mg.llamadas, 
+	   mg.sms, 
+	   mg.correos, 
+	   mg.gescall, 
+	   mg.whatsapp,
+	   mg.visitas,
+	   mg.no_contacto,  
+	   mg.total_gestiones, 
+       mg.ultimo_alo AS fecha_ultimo_alo,
+       tp.telefono::TEXT AS telefono_positivo,
+       tp.fec_ultima_marcacion AS fecha_telefono_positivo
+FROM binicial AS bi
+INNER JOIN bactual AS ba ON ba.obligacion_id = bi.obligacion_id
+LEFT JOIN cbpo_codensa.unicos AS u ON u.obligacion_id = bi.obligacion_id
+LEFT JOIN pareto AS pt ON pt.deudor_id = bi.deudor_id
+LEFT JOIN cbpo_codensa.tipo_cliente AS t ON t.deudor_id = bi.deudor_id
+LEFT JOIN sumapagos AS sp ON sp.deudor_id = bi.deudor_id AND u.unico = 1
+LEFT JOIN basemejorgestion AS mg ON mg.deudor_id = bi.deudor_id
+LEFT JOIN baseantiguos AS a ON a.obligacion_id = bi.obligacion_id
+LEFT JOIN cbpo_codensa.mejor_gestion_dia AS md ON md.deudor_id = bi.deudor_id
+LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = bi.deudor_id
+LEFT JOIN compromisos AS cp ON cp.obligacion_id = bi.obligacion_id
+LEFT JOIN cbpo_codensa.alivios AS al ON al.cc = bi.deudor_id;

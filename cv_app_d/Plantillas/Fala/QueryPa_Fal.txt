@@ -3,7 +3,7 @@ select distinct trim(obligacion_id)
 	 			OVER (PARTITION  BY	trim(obligacion_id)
 				ORDER BY	trim(obligacion_id ) desc,
 							pago_valor desc) AS ROWNUMBER
-				,concat('$',pago_valor::varchar)
+				,pago_valor
 from cbpo_falabella.pagos
 where pago_fecha >= date_trunc('month',current_date) 
 order by trim(obligacion_id )desc,row_number ()
