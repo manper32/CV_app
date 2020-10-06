@@ -91,8 +91,7 @@ cicloinicio AS (SELECT DISTINCT a.saldo_capital,c.obligacion_id, a.dia_de_corte,
 																											WHEN dias_en_mora_inicial::NUMERIC >= 91 AND dias_en_mora_inicial::NUMERIC <= 120 THEN '91 A 120'
 																											WHEN dias_en_mora_inicial::NUMERIC >= 121 AND dias_en_mora_inicial::NUMERIC <= 150 THEN '121 A 150'
 																											WHEN dias_en_mora_inicial::NUMERIC >= 151 AND dias_en_mora_inicial::NUMERIC <= 180 THEN '151 A 180'
-																											WHEN dias_en_mora_inicial::NUMERIC >= 181 AND dias_en_mora_inicial::NUMERIC <= 360 THEN '181 A 360'
-																											WHEN dias_en_mora_inicial::NUMERIC > 360 THEN '> 360'
+																											WHEN dias_en_mora_inicial::NUMERIC >= 181  THEN '180 +'
 																										END AS rango_mora_inicial
 FROM ciclo AS c INNER JOIN cbpo_popular.cons_asignacion AS a ON a.obligacion_id = c.obligacion_id AND c.fechamin = a.fecha_registro),
 sumapagos AS (SELECT DISTINCT obligacion_id,sum(pago_valor ) AS valor FROM cbpo_popular.pagos AS p WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE )  GROUP BY obligacion_id),
@@ -104,8 +103,7 @@ actual AS (SELECT DISTINCT obligacion_id,
 																WHEN dias_en_mora_inicial::NUMERIC >= 61 AND dias_en_mora_inicial::NUMERIC <= 90 THEN '61 A 90'
 																WHEN dias_en_mora_inicial::NUMERIC >= 91 AND dias_en_mora_inicial::NUMERIC <= 120 THEN '91 A 120'
 																WHEN dias_en_mora_inicial::NUMERIC >= 121 AND dias_en_mora_inicial::NUMERIC <= 150 THEN '121 A 150'
-																WHEN dias_en_mora_inicial::NUMERIC >= 181 AND dias_en_mora_inicial::NUMERIC <= 360 THEN '181 A 360'
-																WHEN dias_en_mora_inicial::NUMERIC > 360 THEN '> 360'
+																WHEN dias_en_mora_inicial::NUMERIC >= 181 THEN '180 +'
 														  END AS rango_mora_final
 FROM cbpo_popular.cons_asignacion WHERE fecha_registro = (SELECT max(fecha_registro ) FROM cbpo_popular.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE))
 AND asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE)),
@@ -141,7 +139,7 @@ SELECT DISTINCT
 	u.unico::TEXT,
 	cop.nombre::TEXT AS nombre_prod,
     cop.lin_descripcion::TEXT , 
-	concat('1',ca.deudor_id)::TEXT AS deudor_id,
+	ca.deudor_id,
 	concat(ca.primer_nombre ,' ',ca.segundo_nombre ,' ',ca.primer_apellido ,' ',ca.segundo_apellido) AS nombre_cliente,
 	t.tipo_cliente,
 	ca.estado_actual_cartera,

@@ -247,6 +247,7 @@ def csv_CV_Claro(request):
                             2:'mail1'})
 
     anwr_C1 = anwr_C.drop_duplicates(subset=['deudor_id'])
+
     #renombrar campos CV
     df = df.rename(columns={0:'rownumber',
     1:'deudor_id',
@@ -263,44 +264,54 @@ def csv_CV_Claro(request):
     12:'segmento_bpo',
     13:'rango_bpo',
     14:'tipo',
-    15:'valorscoring',
-    16:'numeroreferenciadepago',
-    17:'monto_inicial',
-    18:'monto_ini_cuenta',
-    19:'porcentaje_descuento',
-    20:'valor_descuento',
-    21:'valor_a_pagar',
-    22:'deuda_real',
-    23:'valor_pago',
-    24:'saldo_pendiente',
-    25:'fecha_pago',
-    26:'fecha_compromiso',
-    27:'fecha_pago_compromiso',
-    28:'valor_compromiso',
-    29:'estado_acuerdo',
-    30:'ind_m4',
-    31:'ind_m3',
-    32:'ind_m2',
-    33:'ind_m1',
-    34:'fecha_primer_gestion',
-    35:'fecha_ultima_gestion',
-    36:'indicador',
-    37:'phone',
-    38:'asesor',
-    39:'fecha_gestion',
-    40:'contactabilidad',
-    41:'indicador_hoy',
-    42:'repeticion',
-    43:'llamadas',
-    44:'sms',
-    45:'correos',
-    46:'gescall',
-    47:'whatsapp',
-    48:'visitas',
-    49:'no_contacto',
-    50:'total_gestiones',
-    51:'telefono_positivo',
-    52:'fec_ultima_marcacion'})
+    15:'fecha_de_vencimiento',
+    16:'min_cliente',
+    17:'valorscoring',
+    18:'numeroreferenciadepago',
+    19:'monto_inicial',
+    20:'monto_ini_cuenta',
+    21:'porcentaje_descuento',
+    22:'valor_descuento',
+    23:'valor_a_pagar',
+    24:'deuda_real',
+    25:'valor_pago',
+    26:'saldo_pendiente',
+    27:'fecha_pago',
+    28:'fecha_compromiso',
+    29:'fecha_pago_compromiso',
+    30:'valor_compromiso',
+    31:'estado_acuerdo',
+    32:'ind_m4',
+    33:'ind_m3',
+    34:'ind_m2',
+    35:'ind_m1',
+    36:'fecha_primer_gestion',
+    37:'fecha_ultima_gestion',
+    38:'indicador',
+    39:'phone',
+    40:'asesor',
+    41:'fecha_gestion',
+    42:'contactabilidad',
+    43:'indicador_hoy',
+    44:'repeticion',
+    45:'llamadas',
+    46:'sms',
+    47:'correos',
+    48:'gescall',
+    49:'whatsapp',
+    50:'visitas',
+    51:'no_contacto',
+    52:'total_gestiones',
+    53:'telefono_positivo',
+    54:'fec_ultima_marcacion'})
+
+    #a = fn[fn.obligacion_id == '9876510000211227']
+    #i=0
+    #lin = ['no_contacto_mes_actual','gescall_mes_actual','tel_mes_actual','tel_positivo']
+    #for i in lin:
+    #    df[i].fillna(0,inplace=True)
+    #    df[i] = df[i].apply(lambda x: round(x))
+    #    df[i] = df[i].astype('str')
 
     fn = pd.merge(df,anwr_P1,on = ["deudor_id"]\
                 ,how = "left",indicator = False)
@@ -466,13 +477,11 @@ def csv_CV_FalaJ(request):
 
     try:
         infP = to_horiz(anwr_Pa,'pago','obligacion_id')
-    except:
-        pass
-
-    if infP.shape[1] > 4:
-        tipos = infP.dtypes.to_frame()
-        tipos['index'] = range(len(tipos))
-        tipos = tipos.set_index('index')
+        
+        if infP.shape[1] > 4:
+            tipos = infP.dtypes.to_frame()
+            tipos['index'] = range(len(tipos))
+            tipos = tipos.set_index('index')
         
         su = []
         for n in range(len(tipos)):
@@ -486,12 +495,14 @@ def csv_CV_FalaJ(request):
         infP1['obligacion_id'] = infP.index
         infP = infP1
         
-    i=0
-    lin = ['pago1','pago2','pago3']
-    for i in lin:
-        infP[i].fillna(0,inplace=True)
-        infP[i] = infP[i].apply(lambda x: round(x))
-        infP[i] = '$' + infP[i].astype('str')
+        i=0
+        lin = ['pago1','pago2','pago3']
+        for i in lin:
+            infP[i].fillna(0,inplace=True)
+            infP[i] = infP[i].apply(lambda x: round(x))
+            infP[i] = '$' + infP[i].astype('str')
+    except:
+        pass
 
     #renombrar campos CV
     df = df.rename(columns={0:'idcbpo',
@@ -649,13 +660,11 @@ def csv_CV_FalaC(request):
     infCi = to_horiz(anwr_Ci,'town',"deudor_id")
     try:
         infP = to_horiz(anwr_Pa,'pago','obligacion_id')
-    except:
-        pass
-
-    if infP.shape[1] > 4:
-        tipos = infP.dtypes.to_frame()
-        tipos['index'] = range(len(tipos))
-        tipos = tipos.set_index('index')
+        
+        if infP.shape[1] > 4:
+            tipos = infP.dtypes.to_frame()
+            tipos['index'] = range(len(tipos))
+            tipos = tipos.set_index('index')
         
         su = []
         for n in range(len(tipos)):
@@ -669,12 +678,14 @@ def csv_CV_FalaC(request):
         infP1['obligacion_id'] = infP.index
         infP = infP1
         
-    i=0
-    lin = ['pago1','pago2','pago3']
-    for i in lin:
-        infP[i].fillna(0,inplace=True)
-        infP[i] = infP[i].apply(lambda x: round(x))
-        infP[i] = '$' + infP[i].astype('str')
+        i=0
+        lin = ['pago1','pago2','pago3']
+        for i in lin:
+            infP[i].fillna(0,inplace=True)
+            infP[i] = infP[i].apply(lambda x: round(x))
+            infP[i] = '$' + infP[i].astype('str')
+    except:
+        pass
 
     #renombrar campos CV
     df = df.rename(columns={0:'idcbpo',
@@ -1013,10 +1024,10 @@ def csv_CV_Pop(request):
     62:'casa_actual',
     63:'fecha_retiro_casa'})
             
-    inf["deudor_id"] = "1" + inf["deudor_id"]
-    infC["deudor_id"] = "1" + infC["deudor_id"]
-    infD["deudor_id"] = "1" + infD["deudor_id"]
-    infCi["deudor_id"] = "1" + infCi["deudor_id"]
+    # inf["deudor_id"] = "1" + inf["deudor_id"]
+    # infC["deudor_id"] = "1" + infC["deudor_id"]
+    # infD["deudor_id"] = "1" + infD["deudor_id"]
+    # infCi["deudor_id"] = "1" + infCi["deudor_id"]
 
     fn = pd.merge(df,inf,on = ["deudor_id"]\
                 ,how = "left",indicator = False)

@@ -74,6 +74,8 @@ SELECT DISTINCT ROW_NUMBER () OVER (ORDER BY ca.obligacion_id ) AS rownumber,--1
 	ca.segmento_bpo,--12
 	ca.rango_bpo,
 	d.tipo,
+	ca.fechadevencimiento,
+	ca.mincliente, 
     ca.valorscoring,--13
     ca.numeroreferenciadepago,--14
     '$ ' || round(ca.montoinicial::NUMERIC) AS monto_inicial,--15
@@ -154,6 +156,7 @@ LEFT JOIN cbpo_claro.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
 WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_claro.cons_asignacion WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_claro.asignaciones WHERE estado = TRUE ))
 GROUP BY md.indicador,mg.contactability,ca.fecha_registro,ca.deudor_id,ca.obligacion_id,ca.crmorigen,ca.potencialmark,  ca.prepotencialmark,ca.writeoffmark,ca.valorscoring,ca.numeroreferenciadepago,
 ca.estado,ca.nombredelcliente,ca.montoinicial,ca.modinitcta,ca.deudarealcuenta,p.valor_pago,p.fecha_pago,ca.debtageinicial,ed.obligacion_id,ca.segmento_bpo,t.tipo_cliente,u.unico,
+ca.fechadevencimiento,ca.mincliente,
 CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN '% 0' ELSE '% ' || d.descuento END,
 CASE WHEN d.descuento IS NULL OR ed.obligacion_id IS NOT NULL THEN 0 ELSE ROUND(((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100)) END,
 CASE WHEN d.descuento IS NULL THEN ROUND(ca.modinitcta::NUMERIC ) ELSE ROUND((ROUND(ca.modinitcta::NUMERIC ) - ((d.descuento * ROUND(ca.modinitcta::NUMERIC ))/ 100))) END,
