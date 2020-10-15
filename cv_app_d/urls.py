@@ -18,7 +18,7 @@ from django.urls import path
 from cv_app.views import excel_CV_COL,csv_CV_Claro\
         ,csv_CV_CarP,csv_CV_FalaJ,csv_CV_FalaC,csv_GesD_Davi\
         ,csv_CV_Sant,csv_CV_Pop,csv_GesD_Claro,csv_CV_Dav\
-        ,csv_CV_Cod
+        ,csv_CV_Cod,Rep_Chat
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -33,4 +33,5 @@ urlpatterns = [
     path('csv_CV_Cod/', csv_CV_Cod),
     path('csv_GesD_Davi/', csv_GesD_Davi),
     path('csv_GesD_Claro/', csv_GesD_Claro),
+    path('Rep_Chat/<int:num>', Rep_Chat),
 ]

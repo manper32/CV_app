@@ -78,7 +78,7 @@ basecompromisos AS (SELECT ROW_NUMBER () OVER (PARTITION BY c.deudor_id
 compromisos AS (SELECT * 
 				FROM basecompromisos 
 				WHERE contador = 1),
-saldopareto AS (SELECT DISTINCT deudor_id,SUM(REPLACE (REPLACE(saldo_capital_producto,'.',''),',','.')::NUMERIC) sumapareto
+saldopareto AS (SELECT DISTINCT deudor_id,SUM(REPLACE (REPLACE(saldo_capital_pd,'.',''),',','.')::NUMERIC) sumapareto
 					 FROM cbpo_davivienda.cons_asignacion 
 					 WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_davivienda.asignaciones WHERE estado IS TRUE )
 					 AND fecha_registro = (SELECT DISTINCT max(fecha_registro) FROM cbpo_davivienda.cons_asignacion)
@@ -98,30 +98,22 @@ alo AS (SELECT DISTINCT ug.deudor_id,
 		(SELECT count(date_part ('dow', dd)) FROM generate_series ( ug.ultgestion::timestamp , now()::timestamp , '1 day'::interval) AS dd WHERE date_part ('dow', dd) > 0) AS diasultimagestion
 		FROM ultimagestion AS ug)
 SELECT DISTINCT
-	CASE 
-		WHEN ca.tipo_de_asignacion IS NULL THEN 'MASIVO' 
-		ELSE ca.tipo_de_asignacion 
-	END AS tipo_de_cliente,
-	CASE 
-		WHEN ct.cartera IS NULL AND ca.macroportafolio_cliente = 'MonoVehículo' THEN 'MONO_VH'
-		WHEN ct.cartera IS NULL AND ca.macroportafolio_cliente = 'MultiVehículo' THEN 'MULTI_VH'
-		WHEN ct.cartera IS NULL AND ca.exposicion_por_mora_cliente = 'Exposicion al dia' THEN 'AL DIA'
-		ELSE ct.cartera 
-	END, 
+	ct.tipo_de_cliente AS tipo_de_cliente,
+	ct.cartera,
 	ca.deudor_id AS deudor_id,
 	ca.obligacion_id AS obligacion_id,
  	CASE WHEN e.obligacion_nueva::NUMERIC = 0 THEN NULL ELSE e.obligacion_nueva::NUMERIC END AS nueva_obligacion,
 	ca.nombre_titular AS nombre_cliente,
-	regexp_replace(ca.macroportafolio_cliente, '[^a-z^A-Z^0-9]', '', 'g') AS macroportafolio,
+	ct.macroportafolio_ant AS macroportafolio,
 	ca.macroproducto AS producto,
 	ca.descripcion_producto AS detalle_producto,
 	u.unico::TEXT AS unico,
-	ca.exposicion_por_mora_cliente AS exposicion_cliente,
-	ca.rango_por_mora_inicial_producto AS franja_mora,
-	ca.dias_de_mora_inicial_producto AS dias,
-	'$ '||round(REPLACE (REPLACE(ca.saldo_capital_producto,'.',''),',','.')::NUMERIC) AS saldo_capital,
-	'$ '||round(REPLACE (REPLACE(ca.pago_minimo_inicial_producto,'.',''),',','.')::NUMERIC) AS pago_minimo,
-	'$ '||round(REPLACE (REPLACE(ca.saldo_en_mora_inicial_producto,'.',''),',','.')::NUMERIC) AS saldo_mora,
+	ct.exposicion_cliente_ant AS exposicion_cliente,
+	CASE WHEN ca.rxm_asignacion = '9999' THEN '180' ELSE ca.rxm_asignacion END AS franja_mora,
+	ca.dias_mora_pesos AS dias,
+	'$ '||round(REPLACE (REPLACE(ca.saldo_capital_pd,'.',''),',','.')::NUMERIC) AS saldo_capital,
+	'$ '||ca.pago_minimo_prod::NUMERIC AS pago_minimo,
+	'$ '||ca.sldo_mora_prod::NUMERIC AS saldo_mora,
 	'$ '||round(sp.sumapareto) AS saldo_pareto,
 	CASE 
 		WHEN sp.sumapareto <= 14062500 THEN '1. 0 MM A 14,1 MM'
@@ -134,18 +126,18 @@ SELECT DISTINCT
 		WHEN sp.sumapareto > 125000000 AND sp.sumapareto <= 150000000 THEN '8. 125 MM A 150 MM'
 	END AS rango_pareto,
 	CASE 
-		WHEN ca.fecha_de_apertura = '0' THEN NULL 
-		ELSE ca.fecha_de_apertura::date 
-	END AS fecha_de_apertura,
-	ca.plazo_inicial,
+		WHEN ca.fecha_desembolso = '0' THEN NULL 
+		ELSE ca.fecha_desembolso::date 
+	END AS fecha_desembolso,
+	ca.plazo,
 	ca.plazo_restante ,
-	ca.cant_reestructuraciones,
+	ca.no_reestructuraciones,
 	ca.tasa_de_interes,
 	CASE 
-		WHEN CASE WHEN regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') = '' THEN NULL ELSE regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') END > '30' OR regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') IS NULL THEN EXTRACT(DAY FROM CASE WHEN length(regexp_replace(fecha_limite_de_pago, '[^a-z^A-Z^0-9]', '', 'g')) <> 8 THEN NULL ELSE regexp_replace(fecha_limite_de_pago, '[^a-z^A-Z^0-9]', '', 'g')END::date)::TEXT  
-		ELSE CASE WHEN regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') = '' THEN NULL ELSE regexp_replace(ca.ciclo_de_pago , '[^0-9]', '', 'g') END 
-	END AS ciclo_de_pago,
-	'$ '||round(REPLACE (REPLACE(ca.vr_cuota_producto,'.',''),',','.')::NUMERIC) AS vr_cuota_producto,
+		WHEN CASE WHEN regexp_replace(ca.ciclo_pago , '[^0-9]', '', 'g') = '' THEN NULL ELSE regexp_replace(ca.ciclo_pago , '[^0-9]', '', 'g') END > '30' OR regexp_replace(ca.ciclo_pago , '[^0-9]', '', 'g') IS NULL THEN EXTRACT(DAY FROM CASE WHEN length(regexp_replace(ca.fecha_pago, '[^a-z^A-Z^0-9]', '', 'g')) <> 8 THEN NULL ELSE regexp_replace(ca.fecha_pago, '[^a-z^A-Z^0-9]', '', 'g')END::date)::TEXT  
+		ELSE CASE WHEN regexp_replace(ca.ciclo_pago , '[^0-9]', '', 'g') = '' THEN NULL ELSE regexp_replace(ca.ciclo_pago , '[^0-9]', '', 'g') END 
+	END AS ciclo_pago,
+	'$ '||round(REPLACE (REPLACE(ca.cuota_prod,'.',''),',','.')::NUMERIC) AS cuota_prod,
 	e.dias_mora_hoy,
 	e.rxm_proyectado,
 	'$ '||round(REPLACE (REPLACE(e.pago_min_us,'.',''),',','.')::NUMERIC) AS pago_minimo_us,
@@ -175,8 +167,14 @@ SELECT DISTINCT
 		   		WHEN REPLACE (d.valor_dcto,'.','')::NUMERIC > 0 THEN REPLACE (d.valor_dcto,'.','')::NUMERIC 
 		   		ELSE 0 
 		   	END,'-',
-		   	e.resultado_producto_proy,'-',
-		   	e.resultado_cliente_proy,'-',
+			CASE WHEN e.resultado_producto_proy = 'DT' THEN 'DET'
+			     WHEN e.resultado_producto_proy = 'MJ' THEN 'MEJ'
+			     WHEN e.resultado_producto_proy = 'PM' THEN 'PER'
+			END,'-',
+			CASE WHEN e.resultado_cliente_proy = 'DT' THEN 'DET'
+				 WHEN e.resultado_cliente_proy = 'MJ' THEN 'MEJ'
+				 WHEN e.resultado_cliente_proy = 'PM' THEN 'PER'
+			END,'-',
 		   	EXTRACT (DAY FROM e.fecha_actualizacion ),'-',
 		   	ca.tasa_de_interes) AS estrategia,
 	EXTRACT (DAY FROM e.fecha_evolucion::date )::TEXT AS dia,
@@ -187,10 +185,10 @@ SELECT DISTINCT
     regexp_replace(trim(mg.descod1), '[^A-Z^0-9]', '', 'g') AS descod1,
     regexp_replace(trim(mg.descod2), '[^A-Z^0-9]', '', 'g') AS descod2,
 	CASE WHEN ca.macroproducto LIKE '%HIPOTECARIO%' THEN 'CH' ELSE 'CS' END AS macro_banco,
-	concat(ca.nro_matricula,'-',ca.marca_vehiculo,'-',ca.clase_vehiculo,'-',ca.modelo) AS tipo_garantia,
+	concat(ca.nro_matricula,'-',ca.marca_vehiculo,'-',ca.clase_vehiculo) AS tipo_garantia,----'-',ca.modelo
 	NULL AS precastigos,
 	CASE WHEN bt.obligacion_id IS NULL THEN 'NUEVO' ELSE 'ANTIGUO' END AS tombolizacion,
-	round(REPLACE (REPLACE(ca.saldo_capital_producto,'.',''),',','.')::NUMERIC / 1000000) AS saldo_contable,
+	round(REPLACE (REPLACE(ca.saldo_capital_pd,'.',''),',','.')::NUMERIC / 1000000) AS saldo_contable,
 	round(sp.sumapareto / 1000000) AS contable_pareto,
 	regexp_replace(sf.salto_factura, '[^a-z^A-Z^0-9]', '', 'g') AS salto_factura,
     CASE WHEN cpm.fecha_compromiso = '1900-01-01' THEN NULL ELSE cpm.fecha_compromiso END::date AS fecha_creacion_compromiso,
@@ -249,11 +247,11 @@ LEFT JOIN basemejorgestion AS mg ON mg.deudor_id::NUMERIC = ca.deudor_id::NUMERI
 LEFT JOIN cbpo_davivienda.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
 LEFT JOIN telefonospositivos AS tlp ON tlp.deudor_id::NUMERIC = ca.deudor_id::NUMERIC
 LEFT JOIN compromisos AS cpm ON cpm.obligacion_id::NUMERIC = ca.obligacion_id::NUMERIC
-LEFT JOIN cbpo_davivienda.cartera AS ct ON ct.exposicion_cliente = ca.exposicion_por_mora_cliente
-										AND ct.macroportafolio = ca.macroportafolio_cliente
-LEFT JOIN cbpo_davivienda.saltofactura AS sf ON sf.proyecto_factura = concat(ca.macroportafolio_cliente,ca.exposicion_por_mora_cliente)
-LEFT JOIN cbpo_davivienda.macrofactura AS mf ON mf.macroportafolio = ca.macroportafolio_cliente 
-										AND mf.unidad = CASE WHEN ca.tipo_de_asignacion IS NULL THEN 'MASIVO' ELSE ca.tipo_de_asignacion END
+LEFT JOIN cbpo_davivienda.cartera AS ct ON ct.exposicion_cliente = ca.exposicion_cliente_itb
+										AND ct.macroportafolio = ca.macrop_itb
+LEFT JOIN cbpo_davivienda.saltofactura AS sf ON sf.proyecto_factura = concat(ca.macrop_itb,ca.exposicion_cliente_itb)
+LEFT JOIN cbpo_davivienda.macrofactura AS mf ON mf.macroportafolio = ca.macrop_itb 
+										     AND mf.unidad = ct.tipo_de_cliente
 LEFT JOIN ultimagestion AS ultg ON ultg.deudor_id = ca.deudor_id
 LEFT JOIN alo AS al ON al.deudor_id = ca.deudor_id 
 WHERE asignacion_id = (SELECT asignacion_id FROM cbpo_davivienda.asignaciones WHERE estado IS TRUE )

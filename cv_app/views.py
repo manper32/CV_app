@@ -6,6 +6,7 @@ import math
 import pandas as pd
 from openpyxl import Workbook
 import csv
+import random
 
 def psql_pdc(query):
     #credenciales PostgreSQL produccion
@@ -555,40 +556,42 @@ def csv_CV_FalaJ(request):
     47:'cv12',
     48:'restructuracion',
     49:'valor_restruc',
-    50:'pagominimo_anterior',
-    51:'pagominimo_actual',
-    52:'cuota36',
-    53:'cuota48',
-    54:'cuota60',
-    55:'cuota72',
-    56:'proyectada_cargue',
-    57:'aplica_ajuste',
-    58:'fecha',
-    59:'diferencia',
-    60:'porcentaje_saldo_total',
-    61:'x',
-    62:'valor',
-    63:'porcentaje_participacion',
-    64:'ind_m4',
-    65:'ind_m3',
-    66:'ind_m2',
-    67:'ind_m1',
-    68:'fecha_primer_gestion',
-    69:'telefono_mejor_gestion',
-    70:'fecha_gestion',
-    71:'contactabilidad',
-    72:'indicador_hoy',
-    73:'repeticion',
-    74:'llamadas',
-    75:'sms',
-    76:'correos',
-    77:'gescall',
-    78:'whatsapp',
-    79:'visitas',
-    80:'no_contacto',
-    81:'telefono_positivo',
-    82:'fec_ultima_marcacion',
-    83:'lista_robinson'})
+    50:'pagominimo_actual',
+    51:'pagominimo_anterior',
+    52:'periodo_actual',
+    53:'periodo_anterior',
+    54:'cuota36',
+    55:'cuota48',
+    56:'cuota60',
+    57:'cuota72',
+    58:'proyectada_cargue',
+    59:'aplica_ajuste',
+    60:'fecha',
+    61:'diferencia',
+    62:'porcentaje_saldo_total',
+    63:'x',
+    64:'valor',
+    65:'porcentaje_participacion',
+    66:'ind_m4',
+    67:'ind_m3',
+    68:'ind_m2',
+    69:'ind_m1',
+    70:'fecha_primer_gestion',
+    71:'telefono_mejor_gestion',
+    72:'fecha_gestion',
+    73:'contactabilidad',
+    74:'indicador_hoy',
+    75:'repeticion',
+    76:'llamadas',
+    77:'sms',
+    78:'correos',
+    79:'gescall',
+    80:'whatsapp',
+    81:'visitas',
+    82:'no_contacto',
+    83:'telefono_positivo',
+    84:'fec_ultima_marcacion',
+    85:'lista_robinson'})
 
 
     fn = pd.merge(df,inf,on = ["deudor_id"]\
@@ -747,8 +750,8 @@ def csv_CV_FalaC(request):
     56:'valor_restruc',
     57:'pagominimo_actual',
     58:'pagominimo_anterior',
-    59:'periodo',
-    60:'periodo',
+    59:'periodo_actual',
+    60:'periodo_anterior',
     61:'cuota36',
     62:'cuota48',
     63:'cuota60',
@@ -1104,13 +1107,13 @@ def csv_CV_Dav(request):
     15:'saldo_mora',
     16:'saldo_pareto',
     17:'rango_pareto',
-    18:'fecha_de_apertura',
-    19:'plazo_inicial',
+    18:'fecha_desembolso',
+    19:'plazo',
     20:'plazo_restante',
-    21:'cant_reestructuraciones',
+    21:'no_reestructuraciones',
     22:'tasa_de_interes',
-    23:'ciclo_de_pago',
-    24:'vr_cuota_producto',
+    23:'ciclo_pago',
+    24:'cuota_prod',
     25:'dias_mora_hoy',
     26:'rxm_proyectado',
     27:'pago_minimo_us',
@@ -1351,3 +1354,67 @@ def csv_GesD_Davi(request):
                             15:'descod02'})
     
     return csv_o(fn,tablename)
+
+def Rep_Chat(request,num):
+    lista = ['cbpo_bogota'
+    ,'cbpo_carteraok'
+    ,'cbpo_claro'
+    ,'cbpo_davivienda'
+    ,'cbpo_falabella'
+    ,'cbpo_popular'
+    ,'cbpo_progresa'
+    ,'cbpo_propia'
+    ,'cbpo_qnt']
+    #credenciales PostgreSQL produccion
+    connP_P = {
+    	'host' : '10.150.1.74',
+    	'port' : '5432',
+    	'user':'postgres',
+    	'password':'cobrando.bi.2020',
+    	'database' : 'postgres'}
+    
+    queryP_data = """
+    select distinct agent_id
+    from """+lista[num]+""".wolk_chats
+    where chat_date between date_trunc('month',current_date) and current_date
+    order by agent_id desc;
+    """
+    queryP_data1 = """
+    select distinct chat_id
+    from """+lista[num]+""".wolk_chats
+    where chat_date between date_trunc('month',current_date) and current_date
+    and agent_id = %s
+    order by chat_id desc;
+    """
+    queryP_data2 = """
+    select chat_id ,from_msg ,from_ ,to_ ,"time" ,msg 
+    from """+lista[num]+""".wolk_conv
+    where chat_id = %s
+    order by time;
+    """
+    conexionP_P = psycopg2.connect(**connP_P)
+    cursorP_P = conexionP_P.cursor ()
+    cursorP_P.execute(queryP_data)
+    anwr = cursorP_P.fetchall()
+    
+    #i = 2
+    for i in range(len(anwr)):
+        agent = str(anwr[i][0])
+        cursorP_P.execute(queryP_data1 % agent)
+        anwr1 = cursorP_P.fetchall()
+        if len(anwr1)-1 > 0:
+            chat = str(anwr1[random.randrange(0,len(anwr1)-1)][0])
+        else:
+            chat = str(anwr1[0][0])
+        cursorP_P.execute(queryP_data2 % chat)
+        if 'anwr2' not in locals():
+            anwr2 = pd.DataFrame(cursorP_P.fetchall())
+        else:
+            anwr2 = anwr2.append(pd.DataFrame(cursorP_P.fetchall()))
+    anwr2 = anwr2.rename(columns={0:'chat_id',
+                            1:'from_msg',
+                            2:'emisor',
+                            3:'receptor',
+                            4:'fecha',
+                            5:'msg'})
+    return csv_o(anwr2,lista[num]+'.csv')

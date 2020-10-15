@@ -124,7 +124,7 @@ cuota72m,
 periodo,
 ROW_NUMBER () OVER (PARTITION BY cuenta  ORDER BY periodo DESC) AS contador
 FROM cbpo_falabella.reestructuraciones
-WHERE periodo::date >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado = TRUE AND unidad_id = 2)),
+/*WHERE periodo::date >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado = TRUE AND unidad_id = 2)*/),
 reestructuraciones1 AS (SELECT DISTINCT cuenta,pago_minimo,cuota36m,cuota42m,cuota60m,cuota72m,periodo FROM reestructuraciones 
 						WHERE contador = 1),
 reestructuraciones2 AS (SELECT DISTINCT cuenta,cuota36m,cuota42m,cuota60m,cuota72m,periodo FROM reestructuraciones 
@@ -498,8 +498,6 @@ LEFT JOIN cbpo_falabella.gastos_cobranza AS gc ON ca.dias_mora_asignacion::NUMER
 LEFT JOIN listarobinson AS l ON l.deudor_id = ca.deudor_id
 LEFT JOIN ajustes AS aj ON aj.obligacion_id = ca.obligacion_id
 LEFT JOIN maxfectreest AS r ON r.cuenta = ca.obligacion_id
-/*LEFT JOIN cbpo_falabella.reestructuraciones AS res ON res.cuenta = r.cuenta AND res.periodo = r.maxrest
-LEFT JOIN cbpo_falabella.reestructuraciones AS ras ON ras.cuenta = r.cuenta AND ras.periodo = r.maxrest - 5*/
 LEFT JOIN cbpo_falabella.mejor_gestion_dia AS md ON md.deudor_id = ca.deudor_id
 LEFT JOIN telefonospositivos AS tp ON tp.deudor_id = ca.deudor_id
 LEFT JOIN reestructuraciones1 AS r1 ON r1.cuenta = ca.obligacion_id
@@ -508,6 +506,5 @@ WHERE ca.fecha_registro = (SELECT max(fecha_registro) FROM cbpo_falabella.cons_a
 AND ca.asignacion_id = (SELECT asignacion_id FROM cbpo_falabella.asignaciones WHERE estado IS TRUE  AND unidad_id = 2)
 AND ca.unidad_nombre = 'Precastigo'
 AND u.unidad_id = 2
----AND ca.deudor_id = '79889964'
 ORDER BY ca.idcbpo)
 SELECT DISTINCT * FROM comovamos;

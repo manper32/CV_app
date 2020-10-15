@@ -42,33 +42,34 @@ baseinicial AS (SELECT DISTINCT obligacion_id ,min(fecha_registro ) AS minfec
 				   FROM cbpo_codensa.pagos 
 				   WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_codensa.asignaciones WHERE estado = TRUE) 
 				   GROUP BY deudor_id),
+listasignacion AS (SELECT DISTINCT asignacion_id ,ROW_NUMBER () OVER (ORDER BY fecha_apertura DESC) AS orden FROM cbpo_codensa.asignaciones),
 base AS (SELECT DISTINCT o.deudor_id 
-			  FROM cbpo_codensa.obligaciones_asignacion AS oa 
-			  INNER JOIN cbpo_codensa.obligaciones AS o 
-			  ON o.obligacion_id = oa.obligacion_id
-			  WHERE oa.asignacion_id = (SELECT asignacion_id FROM idasignacion)),
+		 FROM cbpo_codensa.obligaciones_asignacion AS oa 
+		 INNER JOIN cbpo_codensa.obligaciones AS o 
+		 ON o.obligacion_id = oa.obligacion_id
+		 WHERE oa.asignacion_id = (SELECT asignacion_id FROM idasignacion)),
 consa AS (SELECT m.* 
 		  FROM cbpo_codensa.mejor_gestion AS m 
 		  LEFT JOIN base AS b 
 		  ON b.deudor_id = m.deudor_id 
-		  WHERE mes = EXTRACT (MONTH FROM current_date )),
+		  WHERE m.asignacion_id = (SELECT asignacion_id FROM listasignacion WHERE orden = 1)),	 
 consb AS (SELECT m.deudor_id,indicador 
 	      FROM cbpo_codensa.mejor_gestion AS m 
 	      LEFT JOIN base AS b 
 	      ON b.deudor_id = m.deudor_id 
-	      WHERE mes = EXTRACT (MONTH FROM current_date ) -1),
+	      WHERE m.asignacion_id = (SELECT asignacion_id FROM listasignacion WHERE orden = 2)),
 consc AS (SELECT m.deudor_id,indicador 
           FROM cbpo_codensa.mejor_gestion AS m 
           LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
-          WHERE mes = EXTRACT (MONTH FROM current_date ) -2),
+          WHERE m.asignacion_id = (SELECT asignacion_id FROM listasignacion WHERE orden = 3)),
 consd AS (SELECT m.deudor_id,indicador 
 		  FROM cbpo_codensa.mejor_gestion AS m 
 		  LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
-		  WHERE mes = EXTRACT (MONTH FROM current_date ) -3),
+		  WHERE m.asignacion_id = (SELECT asignacion_id FROM listasignacion WHERE orden = 4)),
 conse AS (SELECT m.deudor_id,indicador 
 	      FROM cbpo_codensa.mejor_gestion AS m 
 	      LEFT JOIN base AS b ON b.deudor_id = m.deudor_id 
-	      WHERE mes = EXTRACT (MONTH FROM current_date ) -4),
+	      WHERE m.asignacion_id = (SELECT asignacion_id FROM listasignacion WHERE orden = 5)),		 
 basemejorgestion AS (SELECT DISTINCT bs.deudor_id,
 							a.mes, 
 							a.anio, 

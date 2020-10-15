@@ -124,7 +124,7 @@ cuota72m,
 periodo,
 ROW_NUMBER () OVER (PARTITION BY cuenta  ORDER BY periodo DESC) AS contador
 FROM cbpo_falabella.reestructuraciones
-WHERE periodo::date >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado = TRUE AND unidad_id = 1)),
+/*WHERE periodo::date >= (SELECT fecha_apertura FROM cbpo_falabella.asignaciones WHERE estado = TRUE AND unidad_id = 1)*/),
 reestructuraciones1 AS (SELECT DISTINCT cuenta,pago_minimo,cuota36m,cuota42m,cuota60m,cuota72m,periodo FROM reestructuraciones 
 						WHERE contador = 1),
 reestructuraciones2 AS (SELECT DISTINCT cuenta,cuota36m,cuota42m,cuota60m,cuota72m,periodo FROM reestructuraciones 
