@@ -71,16 +71,13 @@ saldototalentidad AS (SELECT DISTINCT unidad,
                                               WHERE asignacion_id = (SELECT asignacion_id 
                                                                      FROM cbpo_santander.asignaciones 
                                                                      WHERE estado IS TRUE )) 
-                      GROUP BY deudor_id,unidad)/*,
-unicos AS (SELECT DISTINCT 
-				CASE WHEN ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY c.deudor_id, c.unidad) > 1 THEN 0 
-				     ELSE  ROW_NUMBER () OVER (PARTITION BY deudor_id, unidad ORDER BY deudor_id, unidad) 
-				END AS orden, c.deudor_id ,c.unidad ,c.obligacion_id 
-		   FROM cbpo_santander.cons_asignacion AS c 
-		   WHERE asignacion_id = (SELECT DISTINCT a.asignacion_id FROM cbpo_santander.asignaciones AS a WHERE estado = TRUE)
-		   AND deudor_id = '93286243')*/ 
+                      GROUP BY deudor_id,unidad)
 SELECT DISTINCT 
-	ca.unidad AS entidad,
+	ca.gestor,
+	CASE 
+		WHEN length(ca.obligacion_id ) = 8 THEN 'JURISCOOP'
+		WHEN length(ca.obligacion_id ) = 12 THEN 'SANTANDER'
+	END AS entidad,	
 	ca.abogado,
 	ca.fecha_desembolso,
 	ca.fecha_corte::int4,

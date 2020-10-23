@@ -3,7 +3,8 @@ select distinct trim(deudor_id )
 	 			OVER (PARTITION  BY	trim(deudor_id )
 				ORDER BY	trim(deudor_id ) desc,
 							correo desc) AS ROWNUMBER
-				,correo --select *
+				,regexp_replace(upper(correo), '[^0-9^A-Z^.^@^-^_]', '','g')
+				--,correo --select *
 from cbpo_santander.correos
 where correo != ''
 order by trim(deudor_id )desc,row_number ()

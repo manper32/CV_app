@@ -91,7 +91,7 @@ cicloinicio AS (SELECT DISTINCT a.saldo_capital,c.obligacion_id, a.dia_de_corte,
 																											WHEN dias_en_mora_inicial::NUMERIC >= 91 AND dias_en_mora_inicial::NUMERIC <= 120 THEN '91 A 120'
 																											WHEN dias_en_mora_inicial::NUMERIC >= 121 AND dias_en_mora_inicial::NUMERIC <= 150 THEN '121 A 150'
 																											WHEN dias_en_mora_inicial::NUMERIC >= 151 AND dias_en_mora_inicial::NUMERIC <= 180 THEN '151 A 180'
-																											WHEN dias_en_mora_inicial::NUMERIC >= 181  THEN '180 +'
+																											WHEN dias_en_mora_inicial::NUMERIC >= 181  THEN '181 +'
 																										END AS rango_mora_inicial
 FROM ciclo AS c INNER JOIN cbpo_popular.cons_asignacion AS a ON a.obligacion_id = c.obligacion_id AND c.fechamin = a.fecha_registro),
 sumapagos AS (SELECT DISTINCT obligacion_id,sum(pago_valor ) AS valor FROM cbpo_popular.pagos AS p WHERE pago_fecha >= (SELECT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE )  GROUP BY obligacion_id),
@@ -162,11 +162,15 @@ SELECT DISTINCT
 	     WHEN a.rango_mora_final = '0' THEN 'Normalizado'
 	     WHEN ci.rango_mora_inicial > a.rango_mora_final THEN 'Caido'
 	END AS estado,
-	'$ '||ROUND(REPLACE(ca.valor_en_mora,',','.')::NUMERIC) AS valmora,
-	'$ '||ROUND(p.saldo_pareto) AS valmora_pareto,
-	'$ '||ROUND(REPLACE(ci.saldo_capital,',','.')::NUMERIC) AS capital_inicial,
+	'$ '||ROUND(regexp_replace(REPLACE(ca.valor_en_mora,',','.'), '[^0-9]', '', 'g')::NUMERIC) AS valmora,
+    '$ '||ROUND(p.saldo_pareto) AS valmora_pareto,
+	'$ '||ROUND(regexp_replace(REPLACE(ci.saldo_capital,',','.'), '[^0-9]', '', 'g')::NUMERIC) AS capital_inicial,
 	'$ '||stp.total_pareto AS  saltotalpareto,
-	'$ '||ROUND(REPLACE(ca.pago_minimo,',','.')::NUMERIC) AS pago_minimo,
+	'$ '||ROUND(regexp_replace(REPLACE(ca.pago_minimo,',','.'), '[^0-9]', '', 'g')::NUMERIC) AS pago_minimo,
+	ca.saldo_capital_vencido,
+	ca.seguros ,
+	ca.intereses_mora,
+	ca.int_causados, 
 	NULL AS rango_saltotal,
 	ca.estado AS asignacion_inicial,
 	ca.wasisfinal AS wasis_banco,
@@ -221,5 +225,5 @@ LEFT JOIN cuentapagos AS cp ON cp.obligacion_id = ca.obligacion_id
 LEFT JOIN compromisos AS cpm ON cpm.obligacion_id = ca.obligacion_id
 LEFT JOIN cbpo_popular.unicos AS u ON u.obligacion_id = ca.obligacion_id
 LEFT JOIN cbpo_popular.codificacion_productos AS cop ON cop.lin_linea_credito = ca.producto 
-WHERE ca.fecha_registro = (SELECT DISTINCT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE)
+WHERE ca.fecha_registro >= (SELECT DISTINCT fecha_apertura FROM cbpo_popular.asignaciones WHERE estado = TRUE)
 AND ca.asignacion_id = (SELECT DISTINCT asignacion_id FROM cbpo_popular.asignaciones WHERE estado = TRUE);
